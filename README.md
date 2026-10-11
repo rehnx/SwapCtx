@@ -1,102 +1,103 @@
-# SwapCtx
+﻿# SwapCtx
 
-Local-first external context records and explicit project path-rule checks for AI coding projects. Rust CLI, SQLite storage, Windows first.
+Local-first external context records and manual project boundary checks. Rust CLI, SQLite storage, Windows first.
 
-SwapCtx stores requirements, decisions, notes, and path rules that you deliberately save. It does **not** expand a model's native context window, inspect hidden model state, connect to agents, or automatically prevent changes. A successful path check is a snapshot observation, not authorization or enforcement.
+SwapCtx preserves requirements, decisions, notes, and rules that you explicitly save. It does **not** expand native model context, inspect hidden model state, integrate with agents, or intercept their actions. A check is an observation at a point in time, not enforcement or authorization.
 
 ## Foundation status
 
-The supplied v0.1 implementation has been audited and hardened without adding agent integrations. See [the foundation audit](docs/FOUNDATION_AUDIT.md) for findings, behavior changes, verification evidence, and remaining work.
+Native Windows formatting, Clippy, debug/release builds, 36 functional tests, and a 100,000-record benchmark passed. Rust and dependencies are pinned. Linux execution and the automated dependency advisory scan remain unverified. See [the foundation audit](docs/FOUNDATION_AUDIT.md) for evidence and remaining release gates.
 
-**Release verification is incomplete:** the development environment has no Rust toolchain and could not download one. Supplemental SQL checks passed; the Rust test suite, compiler, formatter, Clippy, and executable have not been run. The included CI workflow must pass before treating this revision as a verified release.
+## Build and verify
 
-## Build and verify on Windows
-
-Install Rust and the Microsoft C++ Build Tools with the **Desktop development with C++** workload. Use an x64 native tools terminal if the linker/build tools are not discovered automatically. The bundled SQLite dependency needs a working C compiler.
-
-From the folder containing `Cargo.toml`:
+Install Rust and Microsoft C++ Build Tools with the **Desktop development with C++** workload. Bundled SQLite requires a C compiler. From the folder containing `Cargo.toml`:
 
 ```powershell
-cargo fmt
-cargo clippy --all-targets -- -D warnings
-cargo test --all-targets
-cargo build --release
+cargo fmt --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked --all-targets
+cargo build --locked --release
+cargo test --locked --release --all-targets
 ```
 
-The executable is `target\release\swapctx.exe`. The first build downloads dependencies; the executable has no network operations. After the first successful dependency resolution, commit the generated `Cargo.lock` and use `--locked` for tests and release builds. No lockfile has been fabricated for this unbuilt source package.
+`rust-toolchain.toml` pins tested Rust 1.99.0; `Cargo.lock` contains actual resolved dependencies. The executable is `target\release\swapctx.exe`. Building may download dependencies; the executable has no network client or telemetry.
 
-`.github/workflows/ci.yml` contains Windows and Linux checks. It has not been executed. Put the `SwapCtx` source folder at repository root when publishing it so GitHub discovers that workflow. CI currently formats its build inputs; once local Rust verification is available, commit rustfmt's output and change that step to `cargo fmt --check`.
-
-For supplemental SQL verification with Node.js 24 (optional, not a runtime dependency):
+The fail-fast Windows script also discovers an exact-version compiler installed outside PATH:
 
 ```powershell
-node scripts/check-sql.cjs
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify.ps1 -ReleaseTests -Benchmark
+# With cached dependencies, add -Offline; select a cache with -CargoHome.
 ```
 
-This executes SQL extracted from the Rust sources using Node's SQLite library. It **does not** run the Rust application, validate its Rust bindings, or replace `cargo test`.
+The execution-policy argument applies only to that process. The benchmark is optional and ignored during ordinary tests. Windows/Linux CI and an online `cargo audit` job are supplied but have not run here. Publish the source folder at repository root so GitHub discovers `.github/workflows/ci.yml`.
+
+Optional Node.js 24 schema checks: `node scripts/check-sql.cjs`. These eight supplemental checks do not replace native tests. Node is not a runtime dependency.
 
 ## Use
 
 ```powershell
 $SwapCtx = 'C:\path\to\SwapCtx\target\release\swapctx.exe'
 Set-Location 'C:\path\to\your-project'
-
 & $SwapCtx init
-& $SwapCtx memory add --kind requirement 'Preserve authentication behavior'
-& $SwapCtx memory add --kind decision 'Use the existing component architecture'
+& $SwapCtx memory add --kind requirement --key authentication 'Preserve authentication behavior'
+& $SwapCtx memory add --kind decision --expires-in-days 30 'Use the existing component architecture'
 & $SwapCtx memory search 'authentication'
 & $SwapCtx memory recent --limit 10
-
-& $SwapCtx protect add --path 'src/auth/**' --reason 'Authentication changes need review'
-& $SwapCtx protect list
+& $SwapCtx memory get 1
+& $SwapCtx memory supersede 1 'Preserve authentication and session expiry behavior'
+& $SwapCtx memory recent --include-inactive
+& $SwapCtx memory review 2 --expires-in-days 60
+& $SwapCtx protect add --path 'src/auth/**' --reason 'Changes need review' --policy ask
 & $SwapCtx protect check 'src/auth/login.ts'
-# Exit code 2 and a PROTECTED diagnostic indicate a match.
-
+# Exit 3: ask matched; no approval was requested or granted.
+& $SwapCtx protect list
 & $SwapCtx status
+& $SwapCtx doctor
+& $SwapCtx backup 'C:\path\to\backup\swapctx-snapshot.db'
+& $SwapCtx capabilities
 & $SwapCtx privacy
-& $SwapCtx --help
 ```
 
-`init` registers exactly the current folder. Other commands find the nearest registered ancestor, so they work from subdirectories. A separately initialized nested project has separate records and rules; outer rules are not inherited. Relative check targets are relative to the calling directory. Rules remain relative to the selected project root.
+`init` registers exactly the current folder. Project commands select the nearest registered ancestor. Separately initialized nested projects have separate records/rules; outer rules are not inherited. Relative check targets use the calling directory; rules use the project root.
 
-An optional global `--data-dir 'C:\path\to\local-data'` stores `swapctx.db` in an explicit directory, useful for tests or separate stores. Relative data directories resolve from the calling directory, so use an absolute directory when moving between project folders. Avoid using shared/network storage for sensitive local records.
+Global `--data-dir 'C:\path\to\local-data'` selects an independent store. Relative data directories resolve from the calling directory; prefer absolute directories when moving between projects. Default Windows storage is `%LOCALAPPDATA%\SwapCtx\swapctx.db`; non-Windows development uses `$XDG_DATA_HOME/SwapCtx` or `$HOME/.local/share/SwapCtx`.
 
-## Rule and search contracts
+## Memory contracts
 
-- Rule paths use forward slashes. `src/*.rs` matches one level; `src/**` matches descendants and the `src` directory itself.
-- Windows rule matching is ASCII case insensitive, including on case-sensitive Windows directories (conservative extra matches). Other platforms use case-sensitive matching.
-- Globs use `globset` byte semantics: `?` matches a byte, and Unicode character classes/case variants do not provide full Windows filename equivalence. Prefer literal names or `*` for Unicode paths. This is a documented limitation, not a complete Windows access-control policy.
-- Checks validate both the supplied in-project name and its resolved destination. Existing symlinks/junctions that resolve outside the project, broken links, inaccessible ancestors, and non-directory ancestors cause errors. Missing files are checked using the deepest existing ancestor.
-- Parent traversal, empty targets, control characters, alternate data streams, device names, leading spaces, trailing dots/spaces, and drive-relative or root-relative Windows inputs are rejected. Windows check targets must be literal paths, without wildcard/invalid filename characters. Windows device/verbatim namespace input is unsupported. Ordinary absolute paths inside the project are supported.
-- A check does not enumerate descendants for recursive operations, identify all hard-link names, or prevent filesystem changes between checking and writing. Check every affected path; a future adapter must implement its own operation-aware checks.
-- Search is literal substring matching against content and kind, with ASCII case-insensitive SQLite `LIKE`. `%`, `_`, and `\` are treated literally. Unicode content is preserved, but search does not perform Unicode case folding, stemming, embeddings, or relevance ranking.
-- Search/recent results are newest first, with limits from 1 to 100. Empty queries are rejected. Results stream one record at a time.
-- New inputs are bounded in UTF-8 bytes: kind 128, content 1 MiB, rule pattern 4 KiB, reason 16 KiB, query 4 KiB. Windows command-line limits may be smaller. Existing saved text is not rewritten or truncated.
-- Terminal controls, newlines in saved values, and directional override/isolate characters are escaped for display. Stored content remains unchanged.
-- Adding an identical rule with the same reason reports an error. Different reasons for the same pattern are allowed. Rule removal is scoped to the current project.
+- Search is literal substring matching against content and kind with ASCII-insensitive SQLite LIKE. Percent, underscore, and backslash are literal. Unicode is preserved; Unicode case folding, semantic ranking, embeddings, and full-text indexing are absent.
+- Search/recent return newest records first, limits 1–100. Recent uses the project index; substring searches can scan history. Get uses a project-scoped record ID.
+- Default retrieval includes active records. `--include-inactive` includes archived/superseded history. `archive` retains data; `supersede` atomically creates a replacement and links the retained original.
+- Multiple active records with an identical explicit `--key` display CONFLICT. This does not infer semantic contradictions or decide which statement is correct.
+- Expired records display stale and remain visible, including requirements. `--fresh-only` deliberately filters them. `review` records human review; without expiry flags it preserves existing expiry. Use `--expires-in-days` to renew or `--clear-expiry` to remove expiry. The local clock and review timestamps do not prove correctness.
+- Potential secrets are rejected on new memory/rule writes unless `--allow-sensitive` is explicit. Known secret-like values are hidden in ordinary output; `memory get ID --reveal` explicitly displays them. Detection has false positives/negatives and is neither comprehensive redaction nor encryption.
+- UTF-8 byte bounds: kind/key 128, content 1 MiB, pattern 4 KiB, reason 16 KiB, query 4 KiB. Empty values and NUL fail. Windows command-line limits may be smaller. Existing records are not rewritten or truncated.
+- Display escapes terminal controls and directional override/isolate characters while preserving stored content.
 
-Exit codes: `0` means command success; `1` means an operational, validation, or database error; `2` means a protected-path match **or** a command-line usage error from the argument parser. Read stderr to distinguish those cases. Wrappers should stop on any nonzero result, not treat an error as permission to write. No hooks or wrappers are installed by SwapCtx.
+## Boundary contracts
 
-## Storage, migration, and recovery
+Persistent policies are deny, ask, and audit. Omitted policy and legacy rules default to deny. All matches print; deny takes precedence over ask, then audit. Audit emits a diagnostic only, with no persisted event history. Ask opens no approval workflow. No policy intercepts operations.
 
-Default Windows database: `%LOCALAPPDATA%\SwapCtx\swapctx.db`. Non-Windows development uses `$XDG_DATA_HOME/SwapCtx` or `$HOME/.local/share/SwapCtx`.
+- Patterns use forward slashes. `src/*.rs` matches one level; `src/**` includes descendants and the directory itself.
+- Windows matching is ASCII insensitive, conservatively including case-sensitive directories. Other platforms are case sensitive. Globset uses byte semantics: `?` matches a byte; Unicode classes/casing do not implement full Windows filename equivalence. Prefer literal names or `*` for Unicode paths.
+- Checks inspect supplied and resolved in-project names. Internal junction aliases and ordinary absolute paths using short Windows project-root names are supported. Outside destinations, broken links, inaccessible or non-directory ancestors fail. Missing targets use the deepest existing ancestor.
+- Traversal, empty targets, controls, alternate streams, reserved devices, ambiguous spaces/dots, drive-relative/root-relative Windows paths, device/verbatim namespaces, and wildcard/invalid Windows target characters fail.
+- Checks do not enumerate descendants, cover every hard-link alias, or prevent changes between checking and writing. Check each affected path. No wrapper/hook is installed.
+- Identical project/pattern/reason/policy rules fail atomically; different policies/reasons remain allowed. Removal is project scoped.
 
-Only `init` creates a database and upgrades its schema. Original unversioned databases remain readable; `init` upgrades recognized schemas transactionally to version 1 while preserving record IDs, content, timestamps, and indexes. Reads use read-only connections. Other writes require an existing recognized database. Unknown, incomplete, foreign, or newer schemas fail with an error; SwapCtx does not replace or reset them. Unexpected triggers/views are rejected. This validates schema structure, not every saved data row.
+Exit codes: 0 success or audit-only/no-match; 1 operational/validation/database error; 2 deny match **or** argument-parser usage error; 3 ask without deny. Read diagnostics to distinguish deny from usage errors. Wrappers should stop on every nonzero result; none grants permission to write.
 
-Ambiguous legacy ASCII case aliases for a Windows project cause an error rather than selecting one record arbitrarily. Those registrations are preserved; there is no automatic project merge/rename recovery command.
+## Storage, migration, recovery
 
-Foreign keys are enabled on each connection, and lock contention has an explicit five-second timeout. SQLite's rollback journal and default durability settings are retained. No WAL migration or encryption has been introduced.
+Only init creates a database. Original unversioned and version-1 databases remain readable without modification. Recognized older schemas upgrade transactionally to v2 on init or a write command. Additive migration preserves original IDs, content, timestamps, and indexes; absent metadata means active memory and deny policy. Reads are read-only; other writes open existing databases only.
 
-For a manual backup, stop all SwapCtx processes and other programs using this database, then copy the entire SwapCtx data directory to a protected backup location. **Do not delete journal, WAL, or SHM files to repair a database.** Copying just the main database while another process is writing is unsafe. There is no verified live-backup, restore, export, or corrupt-database repair command yet.
+Unknown, incomplete, foreign, future schemas and unexpected triggers/views fail without resetting stores. Ambiguous legacy ASCII case aliases for Windows projects fail without deleting registrations. Schema checks are not a full content audit; doctor checks integrity, foreign keys, and lifecycle links without repair. Foreign keys and a five-second busy timeout are explicit. SQLite default journal/durability settings remain; existing WAL stores are supported without forcing a journal-mode change.
 
-If errors suggest damage, preserve the whole directory before investigating. `init` is not a recovery tool. Restoring a known-good backup requires closing database users and replacing the complete data directory. Recovery procedures still need fault-injection and restore testing before production guarantees.
+`backup DESTINATION` creates a consistent **whole-store plaintext** snapshot through SQLite's online backup API, verifies integrity/relationships, flushes, and publishes without overwriting a file. The parent directory must exist. Committed WAL changes are included; uncommitted changes are excluded. Failed staging is cleaned up. A ten-second retry deadline can fail under contention. This is not encryption or a hardware power-loss guarantee.
 
-## Privacy and capability boundaries
+Restore into a separate local directory by copying a verified snapshot as `swapctx.db`, then run `--data-dir 'C:\absolute\restore-data' doctor` and inspect records. This workflow was tested. No automatic restore/merge command exists. Close database users before replacing an existing store and preserve its entire data directory including journal/WAL/SHM sidecars. Never delete sidecars as repair. Init is not corruption recovery.
 
-No AI calls, uploads, telemetry, credential discovery, project scanning, or agent history ingestion are implemented. SQLite storage is **not encrypted**, and the application does not configure Windows ACLs. Local account permissions and disk encryption are the current protection. Anyone with access to the database can read or change saved records; it is not a tamper-proof audit log. Avoid saving credentials.
+## Privacy and next work
 
-External coding agents retain their own network behavior. Saved requirements only influence an agent if a person or a supported adapter supplies them to that agent. Rule monitoring is not enforcement. No model-internal memory-loss explanation, hidden-state access, native context expansion, or agent API compatibility is claimed.
+Storage/backup is plaintext and inherits local permissions. No secure ACL provisioning, tamper resistance, credential discovery, project scanning, automatic history ingestion, AI calls, or uploads exist. External agents retain their own network behavior. Requirements influence agents only when supplied by a person or a future verified adapter.
 
-## Next development work
-
-First finish Rust build/test verification, commit a dependency lockfile, audit dependencies, and test Windows junctions and recovery scenarios. Then prioritize reliable local backup/restore, deliberate memory lifecycle management, and provenance-aware retrieval. Agent adapters and evidence-based debugging should follow documented platform capability checks and operation-level tests, with explicit distinction between observations and actual intercepted actions.
+Complete online advisory audit and cross-platform CI before production release clearance. Phase 2 should strengthen portable recovery, provenance, and measured retrieval quality through failure injection and a versioned interchange contract. Major agent integrations remain deferred until their real capabilities and interception limits are verified.

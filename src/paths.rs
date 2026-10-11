@@ -6,31 +6,45 @@ use anyhow::{bail, Context, Result};
 use globset::{Glob, GlobBuilder, GlobSet, GlobSetBuilder};
 
 pub fn path_text(path: &Path) -> Result<&str> {
-    path.to_str().context("Paths must be valid Unicode; refusing a lossy project identity")
+    path.to_str()
+        .context("Paths must be valid Unicode; refusing a lossy project identity")
 }
 
 fn validate_segment(segment: &str) -> Result<()> {
     if segment.contains(':') || segment.starts_with(' ') || segment.ends_with(['.', ' ']) {
         bail!("Ambiguous Windows paths and alternate data streams are not supported");
     }
-    let base = segment.split('.').next().unwrap_or("").trim_end_matches(' ').to_ascii_uppercase();
-    if matches!(base.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$")
-        || ["COM", "LPT"].iter().any(|prefix| {
-            base.strip_prefix(*prefix).is_some_and(|n| {
-                matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³")
-            })
+    let base = segment
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .trim_end_matches(' ')
+        .to_ascii_uppercase();
+    if matches!(
+        base.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || ["COM", "LPT"].iter().any(|prefix| {
+        base.strip_prefix(*prefix).is_some_and(|n| {
+            matches!(
+                n,
+                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+            )
         })
-    {
+    }) {
         bail!("Windows device names are not supported");
     }
     Ok(())
 }
 
 pub fn rule_glob(pattern: &str) -> Result<Glob> {
-    if pattern.trim().is_empty() || pattern.len() > 4096 || pattern.contains(['\\', ':'])
+    if pattern.trim().is_empty()
+        || pattern.len() > 4096
+        || pattern.contains(['\\', ':'])
         || pattern.chars().any(char::is_control)
         || Path::new(pattern).is_absolute()
-        || pattern.split('/').any(|s| s.is_empty() || s == "." || s == "..")
+        || pattern
+            .split('/')
+            .any(|s| s.is_empty() || s == "." || s == "..")
     {
         bail!("Use a nonempty project-relative forward-slash glob, such as 'src/auth/**'");
     }
@@ -51,7 +65,12 @@ fn resolve_missing(full: &Path) -> Result<PathBuf> {
         match fs::symlink_metadata(&ancestor) {
             Ok(_) => break,
             Err(e) if e.kind() == ErrorKind::NotFound => {
-                absent_parts.push(ancestor.file_name().context("Unable to resolve target")?.to_os_string());
+                absent_parts.push(
+                    ancestor
+                        .file_name()
+                        .context("Unable to resolve target")?
+                        .to_os_string(),
+                );
                 if !ancestor.pop() {
                     bail!("Unable to resolve target");
                 }
@@ -60,7 +79,9 @@ fn resolve_missing(full: &Path) -> Result<PathBuf> {
         }
     }
     // Broken links, inaccessible ancestors and links outside the root fail closed.
-    let mut resolved = ancestor.canonicalize().context("Cannot resolve target ancestor")?;
+    let mut resolved = ancestor
+        .canonicalize()
+        .context("Cannot resolve target ancestor")?;
     if !absent_parts.is_empty() && !resolved.is_dir() {
         bail!("Target ancestor is not a directory");
     }
@@ -72,15 +93,21 @@ fn resolve_missing(full: &Path) -> Result<PathBuf> {
 
 fn relative_text(path: &Path, root: &Path) -> Result<String> {
     #[cfg(not(windows))]
-    let relative = path.strip_prefix(root).context("Path is outside the registered project")?;
+    let relative = path
+        .strip_prefix(root)
+        .context("Path is outside the registered project")?;
     // Windows canonical paths can retain caller spelling. Compare components,
     // never a string prefix (which would also accept sibling project names).
     #[cfg(windows)]
     let relative = {
         let mut parts = path.components();
         for expected in root.components() {
-            let actual = parts.next().context("Path is outside the registered project")?;
-            if !path_text(Path::new(actual.as_os_str()))?.eq_ignore_ascii_case(path_text(Path::new(expected.as_os_str()))?) {
+            let actual = parts
+                .next()
+                .context("Path is outside the registered project")?;
+            if !path_text(Path::new(actual.as_os_str()))?
+                .eq_ignore_ascii_case(path_text(Path::new(expected.as_os_str()))?)
+            {
                 bail!("Path is outside the registered project");
             }
         }
@@ -114,39 +141,27 @@ pub fn target_paths(target: &str, cwd: &Path, root: &Path) -> Result<Vec<String>
         }
     }
     if provided.has_root() != provided.is_absolute()
-        || (!provided.is_absolute() && provided.components().any(|p| matches!(p, Component::Prefix(_))))
+        || (!provided.is_absolute()
+            && provided
+                .components()
+                .any(|p| matches!(p, Component::Prefix(_))))
     {
         bail!("Drive-relative and root-relative paths are not supported");
     }
     #[cfg(windows)]
-    if provided.components().any(|p| matches!(p, Component::Prefix(prefix)
-        if !matches!(prefix.kind(), std::path::Prefix::Disk(_) | std::path::Prefix::UNC(_, _))))
-    {
+    if provided.components().any(|p| {
+        matches!(p, Component::Prefix(prefix)
+        if !matches!(prefix.kind(), std::path::Prefix::Disk(_) | std::path::Prefix::UNC(_, _)))
+    }) {
         bail!("Windows device and verbatim path input is not supported");
     }
     let full = if provided.is_absolute() {
-        // Canonicalize the volume/root representation used for the lexical name too.
-        #[cfg(windows)]
-        {
-            let mut normalized = PathBuf::new();
-            for part in provided.components() {
-                match part {
-                    Component::Prefix(_) | Component::RootDir => normalized.push(part.as_os_str()),
-                    _ => break,
-                }
-            }
-            let volume = normalized.canonicalize().context("Cannot resolve target volume")?;
-            let tail: PathBuf = provided.components().filter_map(|part| match part {
-                Component::Normal(s) => Some(s),
-                _ => None,
-            }).collect();
-            volume.join(tail)
-        }
-        #[cfg(not(windows))]
-        { provided.to_path_buf() }
+        provided.to_path_buf()
     } else {
         cwd.join(provided)
     };
+    #[cfg(windows)]
+    let full = normalize_project_prefix(&full, root)?;
     let lexical = relative_text(&full, root)?;
     let resolved = relative_text(&resolve_missing(&full)?, root)?;
     let mut paths = vec![lexical];
@@ -154,6 +169,26 @@ pub fn target_paths(target: &str, cwd: &Path, root: &Path) -> Result<Vec<String>
         paths.push(resolved);
     }
     Ok(paths)
+}
+
+#[cfg(windows)]
+fn normalize_project_prefix(full: &Path, root: &Path) -> Result<PathBuf> {
+    // Resolve only the project prefix, preserving aliases below it for rule
+    // matching. This supports ordinary absolute paths and Windows 8.3 names.
+    // Canonicalizing the entire target alone would lose protected link names.
+    // Choose the shallowest matching prefix. A junction *inside* the project
+    // may point back to the root; choosing that deeper alias would erase its
+    // lexical name and bypass a rule protecting the alias itself.
+    let ancestors: Vec<_> = full.ancestors().collect();
+    for ancestor in ancestors.into_iter().rev() {
+        if let Ok(canonical) = ancestor.canonicalize() {
+            if path_text(&canonical)?.eq_ignore_ascii_case(path_text(root)?) {
+                let tail = full.strip_prefix(ancestor)?;
+                return Ok(root.join(tail));
+            }
+        }
+    }
+    bail!("Path is outside the registered project")
 }
 
 pub fn matches(pattern: &str, targets: &[String]) -> Result<bool> {
@@ -179,7 +214,9 @@ mod tests {
 
     #[test]
     fn rejects_ambiguous_patterns() {
-        for pattern in ["", " ", "../x", "src\\x", "C:foo", "/x", "./x", "src//x", "NUL", "x.", "x ", "["] {
+        for pattern in [
+            "", " ", "../x", "src\\x", "C:foo", "/x", "./x", "src//x", "NUL", "x.", "x ", "[",
+        ] {
             assert!(rule_glob(pattern).is_err(), "{pattern:?}");
         }
     }
@@ -189,7 +226,10 @@ mod tests {
         assert!(matches("src/auth/**", &["src/auth".into()]).unwrap());
         assert!(matches("src/auth/**", &["src/auth/a/b.rs".into()]).unwrap());
         assert!(!matches("src/*.rs", &["src/a/b.rs".into()]).unwrap());
-        assert_eq!(matches("src/auth/**", &["SRC/AUTH/x".into()]).unwrap(), cfg!(windows));
+        assert_eq!(
+            matches("src/auth/**", &["SRC/AUTH/x".into()]).unwrap(),
+            cfg!(windows)
+        );
     }
 
     #[test]
@@ -197,9 +237,22 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().canonicalize().unwrap();
         fs::write(root.join("file"), "x").unwrap();
-        assert_eq!(target_paths("new/deep/file", &root, &root).unwrap(), ["new/deep/file"]);
+        assert_eq!(
+            target_paths("new/deep/file", &root, &root).unwrap(),
+            ["new/deep/file"]
+        );
         assert!(target_paths("file/child", &root, &root).is_err());
-        for path in ["", ".", "../outside", "a/../b", "file:stream", "NUL", " name", "name.", "name "] {
+        for path in [
+            "",
+            ".",
+            "../outside",
+            "a/../b",
+            "file:stream",
+            "NUL",
+            " name",
+            "name.",
+            "name ",
+        ] {
             assert!(target_paths(path, &root, &root).is_err(), "{path:?}");
         }
     }

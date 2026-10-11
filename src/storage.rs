@@ -8,9 +8,14 @@ use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBeha
 use crate::paths::path_text;
 
 const APPLICATION_ID: i64 = 0x53574358;
-const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
+
+pub fn version(conn: &Connection) -> Result<i64> {
+    Ok(conn.pragma_query_value(None, "user_version", |r| r.get(0))?)
+}
 
 pub fn open(path: &Path, create: bool, writable: bool) -> Result<Connection> {
+    path_text(path)?;
     if create {
         fs::create_dir_all(path.parent().context("Invalid database path")?)?;
     }
@@ -29,6 +34,9 @@ pub fn open(path: &Path, create: bool, writable: bool) -> Result<Connection> {
         initialize(&mut conn)?;
     } else {
         validate(&conn, false)?;
+        if writable && version(&conn)? < SCHEMA_VERSION {
+            initialize(&mut conn)?;
+        }
     }
     Ok(conn)
 }
@@ -44,17 +52,25 @@ fn validate(conn: &Connection, allow_empty: bool) -> Result<()> {
     }
     let tables: i64 = conn.query_row(
         "SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
-        [], |row| row.get(0),
+        [],
+        |row| row.get(0),
     )?;
     if tables == 0 && version == 0 && app == 0 && allow_empty {
         return Ok(());
     }
-    if tables != 3 || (version == SCHEMA_VERSION && app != APPLICATION_ID) {
-        bail!("Unrecognized or incomplete SwapCtx database; preserve it and restore a valid backup");
+    let expected_tables = if version < 2 { 3 } else { 5 };
+    if tables != expected_tables || (version > 0 && app != APPLICATION_ID) {
+        bail!(
+            "Unrecognized or incomplete SwapCtx database; preserve it and restore a valid backup"
+        );
+    }
+    if version >= 2 {
+        validate_metadata(conn)?;
     }
     let executable_schema: i64 = conn.query_row(
         "SELECT count(*) FROM sqlite_schema WHERE type IN ('trigger', 'view')",
-        [], |r| r.get(0),
+        [],
+        |r| r.get(0),
     )?;
     if executable_schema != 0 {
         bail!("Unexpected database triggers or views; refusing this schema");
@@ -65,31 +81,68 @@ fn validate(conn: &Connection, allow_empty: bool) -> Result<()> {
         "SELECT id, project_id, pattern, reason, created_at FROM rules LIMIT 0",
         "SELECT id, project_id, kind, content, created_at FROM memories LIMIT 0",
     ] {
-        conn.prepare(sql).context("Incomplete SwapCtx schema; no records were modified")?;
+        conn.prepare(sql)
+            .context("Incomplete SwapCtx schema; no records were modified")?;
     }
     for (table, columns) in [
         ("projects", &["id", "path", "created_at"][..]),
-        ("rules", &["id", "project_id", "pattern", "reason", "created_at"][..]),
-        ("memories", &["id", "project_id", "kind", "content", "created_at"][..]),
+        (
+            "rules",
+            &["id", "project_id", "pattern", "reason", "created_at"][..],
+        ),
+        (
+            "memories",
+            &["id", "project_id", "kind", "content", "created_at"][..],
+        ),
     ] {
         let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
-        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, bool>(3)?, r.get::<_, i64>(5)?)))?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, bool>(3)?,
+                r.get::<_, i64>(5)?,
+            ))
+        })?;
         let actual = rows.collect::<rusqlite::Result<Vec<_>>>()?;
-        let invalid = actual.iter().zip(columns).enumerate().any(|(i, ((name, kind, required, pk), expected))| {
-            if name.as_str() != *expected { return true; }
-            if i == 0 { return kind != "INTEGER" || *pk != 1; }
-            let expected_type = if name == "project_id" { "INTEGER" } else { "TEXT" };
-            kind != expected_type || !*required || *pk != 0
-        });
+        let invalid = actual.iter().zip(columns).enumerate().any(
+            |(i, ((name, kind, required, pk), expected))| {
+                if name.as_str() != *expected {
+                    return true;
+                }
+                if i == 0 {
+                    return kind != "INTEGER" || *pk != 1;
+                }
+                let expected_type = if name == "project_id" {
+                    "INTEGER"
+                } else {
+                    "TEXT"
+                };
+                kind != expected_type || !*required || *pk != 0
+            },
+        );
         if actual.len() != columns.len() || invalid {
             bail!("Unrecognized columns in {table}; refusing to modify this database");
         }
     }
     for table in ["rules", "memories"] {
         let mut stmt = conn.prepare(&format!("PRAGMA foreign_key_list({table})"))?;
-        let keys = stmt.query_map([], |r| Ok((r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, String>(4)?, r.get::<_, String>(6)?)))?
+        let keys = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, String>(6)?,
+                ))
+            })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        let expected = ("projects".to_owned(), "project_id".to_owned(), "id".to_owned(), "CASCADE".to_owned());
+        let expected = (
+            "projects".to_owned(),
+            "project_id".to_owned(),
+            "id".to_owned(),
+            "CASCADE".to_owned(),
+        );
         if keys.len() != 1 || keys[0] != expected {
             bail!("Missing project isolation constraint in {table}");
         }
@@ -101,9 +154,12 @@ fn validate(conn: &Connection, allow_empty: bool) -> Result<()> {
              WHERE i.[unique] = 1 AND i.partial = 0
              GROUP BY i.name HAVING count(*) = 1 AND max(c.name = 'path') = 1
          )",
-        [], |r| r.get(0),
+        [],
+        |r| r.get(0),
     )?;
-    if !unique_path { bail!("Missing unique project identity constraint"); }
+    if !unique_path {
+        bail!("Missing unique project identity constraint");
+    }
     #[cfg(windows)]
     {
         let duplicate_identity: bool = conn.query_row(
@@ -144,9 +200,107 @@ fn initialize(conn: &mut Connection) -> Result<()> {
          CREATE INDEX IF NOT EXISTS rules_project_idx ON rules(project_id);
          CREATE INDEX IF NOT EXISTS memories_project_idx ON memories(project_id);",
     )?;
+    if version(&tx)? < 2 {
+        tx.execute_batch(include_str!("schema_v2.sql"))?;
+    }
     tx.pragma_update(None, "application_id", APPLICATION_ID)?;
     tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     tx.commit()?;
+    Ok(())
+}
+
+fn validate_metadata(conn: &Connection) -> Result<()> {
+    for (table, columns) in [
+        ("rule_policies", &["rule_id", "policy"][..]),
+        (
+            "memory_metadata",
+            &[
+                "memory_id",
+                "state",
+                "memory_key",
+                "expires_at",
+                "reviewed_at",
+                "superseded_by",
+            ][..],
+        ),
+    ] {
+        let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+        let actual = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, bool>(3)?,
+                    r.get::<_, i64>(5)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let invalid = actual
+            .iter()
+            .enumerate()
+            .any(|(i, (name, kind, required, pk))| {
+                let expected_type = if matches!(name.as_str(), "state" | "memory_key" | "policy") {
+                    "TEXT"
+                } else {
+                    "INTEGER"
+                };
+                name != columns.get(i).copied().unwrap_or("")
+                    || kind != expected_type
+                    || *required != matches!(name.as_str(), "state" | "policy")
+                    || *pk != if i == 0 { 1 } else { 0 }
+            });
+        if actual.len() != columns.len() || invalid {
+            bail!("Unrecognized metadata schema in {table}");
+        }
+    }
+    // These tables are owned by SwapCtx; application code also enforces that
+    // supersession stays within one project and always points to a new record.
+    for (table, parent, column, delete) in [
+        ("rule_policies", "rules", "rule_id", "CASCADE"),
+        ("memory_metadata", "memories", "memory_id", "CASCADE"),
+        ("memory_metadata", "memories", "superseded_by", "NO ACTION"),
+    ] {
+        let valid: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_foreign_key_list(?1)
+             WHERE [table]=?2 AND [from]=?3 AND [to]='id' AND on_delete=?4)",
+            params![table, parent, column, delete],
+            |r| r.get(0),
+        )?;
+        if !valid {
+            bail!("Missing metadata foreign key in {table}");
+        }
+    }
+    Ok(())
+}
+
+pub fn diagnose(conn: &Connection) -> Result<()> {
+    let mut stmt = conn.prepare("PRAGMA integrity_check")?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    for row in rows {
+        if row? != "ok" {
+            bail!("SQLite integrity check failed; preserve the store and restore a backup");
+        }
+    }
+    let mut fk = conn.prepare("PRAGMA foreign_key_check")?;
+    if fk.query([])?.next()?.is_some() {
+        bail!("Database has orphaned references; preserve it before attempting recovery");
+    }
+    if version(conn)? >= 2 {
+        let invalid: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM memory_metadata d
+             JOIN memories old ON old.id=d.memory_id
+             LEFT JOIN memories replacement ON replacement.id=d.superseded_by
+             WHERE d.state NOT IN ('active','archived','superseded')
+                OR (d.state='superseded') != (d.superseded_by IS NOT NULL)
+                OR (d.superseded_by IS NOT NULL AND (replacement.project_id != old.project_id OR replacement.id <= old.id))
+                OR (d.expires_at IS NOT NULL AND d.expires_at <= 0))
+             OR EXISTS(SELECT 1 FROM rule_policies WHERE policy NOT IN ('deny','ask','audit'))",
+            [], |r| r.get(0),
+        )?;
+        if invalid {
+            bail!("Invalid lifecycle or policy metadata; no repair was attempted");
+        }
+    }
     Ok(())
 }
 
@@ -160,8 +314,8 @@ pub fn register(conn: &mut Connection, root: &Path) -> Result<()> {
     let exists: bool = tx.query_row(query, params![path_text(root)?], |r| r.get(0))?;
     if !exists {
         tx.execute(
-        "INSERT INTO projects(path) VALUES (?1) ON CONFLICT(path) DO NOTHING",
-        params![path_text(root)?],
+            "INSERT INTO projects(path) VALUES (?1) ON CONFLICT(path) DO NOTHING",
+            params![path_text(root)?],
         )?;
     }
     tx.commit()?;
@@ -176,10 +330,9 @@ pub fn project(conn: &Connection, cwd: &Path) -> Result<(i64, PathBuf)> {
         } else {
             "SELECT id FROM projects WHERE path = ?1"
         };
-        let id = conn.query_row(
-            query,
-            params![path_text(root)?], |row| row.get(0),
-        ).optional()?;
+        let id = conn
+            .query_row(query, params![path_text(root)?], |row| row.get(0))
+            .optional()?;
         if let Some(id) = id {
             return Ok((id, root.to_path_buf()));
         }
@@ -194,15 +347,30 @@ mod tests {
     #[test]
     fn initialization_is_versioned_and_idempotent() {
         let mut conn = Connection::open_in_memory().unwrap();
-        initialize(&mut conn).unwrap();
-        conn.execute("INSERT INTO projects(path) VALUES ('example')", []).unwrap();
-        conn.execute("INSERT INTO memories(project_id,kind,content) VALUES (1,'requirement','keep')", []).unwrap();
+        conn.execute_batch(include_str!("../tests/fixtures/v0.sql"))
+            .unwrap();
+        conn.execute("INSERT INTO projects(path) VALUES ('example')", [])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO memories(project_id,kind,content) VALUES (1,'requirement','keep')",
+            [],
+        )
+        .unwrap();
         conn.pragma_update(None, "user_version", 0).unwrap();
         conn.pragma_update(None, "application_id", 0).unwrap();
         initialize(&mut conn).unwrap();
         initialize(&mut conn).unwrap();
-        assert_eq!(conn.query_row("SELECT content FROM memories", [], |r| r.get::<_, String>(0)).unwrap(), "keep");
-        assert_eq!(conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(
+            conn.query_row("SELECT content FROM memories", [], |r| r
+                .get::<_, String>(0))
+                .unwrap(),
+            "keep"
+        );
+        assert_eq!(
+            conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
+                .unwrap(),
+            SCHEMA_VERSION
+        );
     }
 
     #[test]
@@ -210,7 +378,15 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         conn.execute("CREATE TABLE other(data TEXT)", []).unwrap();
         assert!(initialize(&mut conn).is_err());
-        assert_eq!(conn.query_row("SELECT count(*) FROM sqlite_schema WHERE type='table'", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(
+            conn.query_row(
+                "SELECT count(*) FROM sqlite_schema WHERE type='table'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            1
+        );
         let mut conn = Connection::open_in_memory().unwrap();
         initialize(&mut conn).unwrap();
         conn.pragma_update(None, "user_version", 99).unwrap();
@@ -221,7 +397,10 @@ mod tests {
     fn rejects_unexpected_triggers_before_writing() {
         let mut conn = Connection::open_in_memory().unwrap();
         initialize(&mut conn).unwrap();
-        conn.execute_batch("CREATE TRIGGER unexpected AFTER INSERT ON memories BEGIN DELETE FROM memories; END;").unwrap();
+        conn.execute_batch(
+            "CREATE TRIGGER unexpected AFTER INSERT ON memories BEGIN DELETE FROM memories; END;",
+        )
+        .unwrap();
         assert!(initialize(&mut conn).is_err());
         assert!(validate(&conn, false).is_err());
     }
@@ -229,13 +408,46 @@ mod tests {
     #[test]
     fn migration_rollback_preserves_original_database() {
         let mut conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(include_str!("../tests/fixtures/v0.sql")).unwrap();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate).unwrap();
-        tx.pragma_update(None, "user_version", SCHEMA_VERSION).unwrap();
+        conn.execute_batch(include_str!("../tests/fixtures/v0.sql"))
+            .unwrap();
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        tx.pragma_update(None, "user_version", SCHEMA_VERSION)
+            .unwrap();
         assert!(tx.execute("INSERT INTO missing VALUES (1)", []).is_err());
         drop(tx);
-        assert_eq!(conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(
+            conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
         validate(&conn, false).unwrap();
+    }
+
+    #[test]
+    fn failed_real_migration_preserves_schema_version_and_user_data() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(include_str!("../tests/fixtures/v0.sql"))
+            .unwrap();
+        conn.execute_batch("INSERT INTO projects(path) VALUES('project'); INSERT INTO memories(project_id,kind,content) VALUES(1,'requirement','keep'); CREATE INDEX rule_policies ON projects(path);").unwrap();
+        assert!(initialize(&mut conn).is_err());
+        assert_eq!(version(&conn).unwrap(), 0);
+        assert_eq!(
+            conn.query_row("SELECT content FROM memories", [], |r| r
+                .get::<_, String>(0))
+                .unwrap(),
+            "keep"
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT count(*) FROM sqlite_schema WHERE type='table'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            3
+        );
     }
 
     #[test]
@@ -255,7 +467,10 @@ mod tests {
         initialize(&mut conn).unwrap();
         register(&mut conn, &root).unwrap();
         register(&mut conn, &root.join("nested")).unwrap();
-        assert_eq!(project(&conn, &root.join("nested/src")).unwrap().1, root.join("nested"));
+        assert_eq!(
+            project(&conn, &root.join("nested/src")).unwrap().1,
+            root.join("nested")
+        );
         assert_eq!(project(&conn, &root.join("other")).unwrap().1, root);
     }
 }
