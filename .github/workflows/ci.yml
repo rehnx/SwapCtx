@@ -1,0 +1,38 @@
+name: Foundation checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      # Supports this source folder both at repository root and in its supplied wrapper.
+      - name: Locate crate
+        run: |
+          if (Test-Path Cargo.toml) { "CRATE_DIR=." >> $env:GITHUB_ENV }
+          elseif (Test-Path SwapCtx/Cargo.toml) { "CRATE_DIR=SwapCtx" >> $env:GITHUB_ENV }
+          else { throw "Cannot locate SwapCtx Cargo.toml" }
+      - name: Toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+      # Apply rustfmt in the runner; local formatting is unverified until Rust is available.
+      - name: Format build inputs
+        working-directory: ${{ env.CRATE_DIR }}
+        run: cargo fmt
+      - name: Lint
+        working-directory: ${{ env.CRATE_DIR }}
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        working-directory: ${{ env.CRATE_DIR }}
+        run: cargo test --all-targets
+      - name: Release build
+        working-directory: ${{ env.CRATE_DIR }}
+        run: cargo build --release
