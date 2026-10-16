@@ -66,6 +66,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Session transport checks failed' }
         & $taskNode scripts/check-pilot-harness.cjs
         if ($LASTEXITCODE -ne 0) { throw 'Pilot evaluator checks failed' }
+        & $taskNode scripts/check-soak-harness.cjs
+        if ($LASTEXITCODE -ne 0) { throw 'Long-session evaluator checks failed' }
         if ($CodexPath) {
             & $taskNode scripts/check-codex.cjs $CodexPath target/release/swapctx.exe
             if ($LASTEXITCODE -ne 0) { throw 'Codex boundary checks failed' }

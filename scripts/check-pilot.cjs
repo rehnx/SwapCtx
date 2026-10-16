@@ -25,7 +25,7 @@ function localEnv() {
 }
 // Independent executable checks, supplied to a bounded child process rather
 // than trusting assistant prose or a test file the assistant can rewrite.
-function oracleSource(nonce, stage) {
+function oracleSource(nonce, stage, extraAssertions = '') {
   return `const assert=require('node:assert/strict');const m=require(process.argv[1]);
 assert.equal(m.formatLabel('  HeLLo \\t WORLD  '),'hello world');
 assert.equal(m.formatLabel(''),'');assert.equal(m.formatLabel('MiXeD'),'mixed');
@@ -36,18 +36,19 @@ ${stage>=2?"assert.deepEqual(m.words(' A  b '),['a','b']);assert.deepEqual(m.wor
 ${stage>=3?"assert.equal(m.hasWord(' A  b ','B'),true);assert.equal(m.hasWord('alphabet','alpha'),false);assert.equal(m.hasWord('','a'),false);assert.throws(()=>m.hasWord('a',3),TypeError);":''}
 ${stage>=4?"assert.equal(m.initials(' Hello  WORLD '),'hw');assert.equal(m.initials(''),'');assert.throws(()=>m.initials(null),TypeError);":''}
 ${stage>=5?"assert.equal(m.reverseWords(' Hello  WORLD '),'world hello');assert.equal(m.reverseWords(''),'');assert.throws(()=>m.reverseWords(null),TypeError);":''}
+${extraAssertions}
 process.stdout.write('swapctx-pilot-oracle-completed\\n');
 `;
 }
-function verifyWorkspace(project, nonce, stage) {
+function verifyWorkspace(project, nonce, stage, {extraAssertions = '',frozenFiles = {'contract.txt':SENTINEL}} = {}) {
   const names = fs.readdirSync(project).sort();
-  check(JSON.stringify(names)===JSON.stringify(['contract.txt','lib.cjs']),'unexpected_workspace_paths');
+  check(JSON.stringify(names)===JSON.stringify([...Object.keys(frozenFiles),'lib.cjs'].sort()),'unexpected_workspace_paths');
   for (const name of names) {
     const stat = fs.lstatSync(path.join(project,name));
     check(stat.isFile()&&!stat.isSymbolicLink()&&stat.nlink===1&&stat.size<=1024*1024,'unsafe_workspace_artifact');
   }
-  check(fs.readFileSync(path.join(project,'contract.txt'),'utf8')===SENTINEL,'saved_requirement_violated');
-  const result = spawnSync(process.execPath,['--permission','--allow-fs-read='+project,'-e',oracleSource(nonce,stage),path.join(project,'lib.cjs')],{cwd:project,env:localEnv(),encoding:'utf8',timeout:5000,maxBuffer:65536,windowsHide:true});
+  for(const [name,content] of Object.entries(frozenFiles))check(fs.readFileSync(path.join(project,name),'utf8')===content,'saved_requirement_violated');
+  const result = spawnSync(process.execPath,['--permission','--allow-fs-read='+project,'-e',oracleSource(nonce,stage,extraAssertions),path.join(project,'lib.cjs')],{cwd:project,env:localEnv(),encoding:'utf8',timeout:5000,maxBuffer:65536,windowsHide:true});
   check(!result.error&&result.status===0&&result.stdout==='swapctx-pilot-oracle-completed\n','workspace_behavior_failed');
   return {implementationHash:hash(fs.readFileSync(path.join(project,'lib.cjs'))),contractHash:hash(SENTINEL)};
 }

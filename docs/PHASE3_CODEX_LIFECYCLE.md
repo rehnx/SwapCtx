@@ -106,6 +106,6 @@ The local attempt returned `authentication_required`, `contextUseObserved: false
 
 ## Readiness decision
 
-Follow-up: [the real-world pilot](REAL_WORLD_CODEX_PILOT.md) adds timing/tool-outcome diagnostics and a disposable coding evaluator. Its authenticated attempt remains blocked; it does not upgrade the model-use or production-readiness claims below.
+Historical decision below: the later [real-world pilot](REAL_WORLD_CODEX_PILOT.md) passed all eight checks in the user's authenticated terminal. [Phase 4](PHASE4_LONG_SESSIONS.md) supersedes current readiness and adds longer-session measurement; natural automatic recovery remains unverified.
 
 Ready for an opt-in managed-console pilot on the tested Windows/Codex/Node versions. Startup/resume/compaction context transport has reproducible native runtime evidence, and prior storage/CLI contracts are preserved. Before claiming normal production Codex usage, complete authenticated model-use and ordinary workspace-edit workflow checks. Native TUI hook delivery, Linux execution, hosted CI and online dependency advisory scanning remain unverified. Measure per-turn app-server startup overhead with a real configured provider before broader release. Expanding agent support or claiming enforceable boundaries is outside this milestone.

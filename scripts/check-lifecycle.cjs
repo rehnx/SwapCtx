@@ -9,6 +9,7 @@ const http = require('node:http');
 const {spawn,spawnSync} = require('node:child_process');
 const {DatabaseSync} = require('node:sqlite');
 const {AppServer} = require('../integrations/codex/session.cjs');
+const {PlainSession,Collector} = require('./soak-support.cjs');
 const codex = path.resolve(process.argv[2]);
 const exe = path.resolve(process.argv[3] || 'target/debug/swapctx.exe');
 const root = fs.mkdtempSync(path.join(os.tmpdir(),'swapctx-lifecycle-'));
@@ -98,6 +99,23 @@ async function run(input, status = 0, flags = [], cwd = project) {
   check('fresh-process resume keeps thread history and replaces the obsolete context block',() => {
     assert.equal(state().threadId,thread);const body = second.sent.at(-1).body;const packet = JSON.stringify(latestContext(body));assert.ok(packet.includes('REQUIREMENT_RESUME_49F20'));assert.ok(!packet.includes('REQUIREMENT_START_49F20'));assert.ok(developer(body).includes('BASELINE_POLICY_MUST_REMAIN'));assert.equal(second.events.find(e => e.event === 'session_ready').resumed,true);
   });
+  check('memory-only refresh avoids repeating unchanged user developer policy',()=>{
+    const messages=second.sent.at(-1).body.input.filter(item=>item.role==='developer');
+    const current=messages.map(item=>typeof item.content==='string'?item.content:(item.content||[]).map(part=>part.text||'').join('\n')).filter(text=>text.includes('<swapctx_context_v1>')).at(-1);
+    assert.ok(!current.includes('BASELINE_POLICY_MUST_REMAIN'));assert.ok(first.events.some(e=>e.event==='token_usage'),'Native usage events should be observed');
+  });
+  const stable=await run('Continue without changing saved requirements\n');
+  check('unchanged context does not append another memory snapshot',()=>{
+    const count=body=>(developer(body).match(/<swapctx_context_v1>/g)||[]).length;
+    assert.equal(count(stable.sent.at(-1).body),count(second.sent.at(-1).body));
+  });
+  const configFile=path.join(home,'config.toml');
+  fs.writeFileSync(configFile,fs.readFileSync(configFile,'utf8').replace('developer_instructions="BASELINE_POLICY_MUST_REMAIN"','developer_instructions="BASELINE_POLICY_MUST_REMAIN POLICY_REVISION_ACTIVE"'));
+  const revisedPolicy=await run('Continue under current developer policy\n');
+  check('changed user developer policy is explicitly included in refreshed history',()=>{
+    const body=revisedPolicy.sent.at(-1).body,current=body.input.filter(item=>item.role==='developer').map(item=>typeof item.content==='string'?item.content:(item.content||[]).map(part=>part.text||'').join('\n')).filter(text=>text.includes('<swapctx_context_v1>')).at(-1);
+    assert.ok(current.includes('POLICY_REVISION_ACTIVE'));
+  });
   mode = 'compact';const compacted = await run('/compact\n');mode = 'normal';
   check('actual Codex manual compaction completes and is observable',() => {
     assert.ok(compacted.events.some(e => e.event === 'compaction_completed'));assert.ok(compacted.events.some(e => e.event === 'turn_completed' && e.operation === 'compact'));
@@ -171,6 +189,24 @@ async function run(input, status = 0, flags = [], cwd = project) {
     assert.equal(failed.sent.length,0);assert.equal(JSON.parse(failed.stderr).error.code,'mandatory_context_incomplete');assert.ok(!fs.readdirSync(path.join(data,'codex')).some(n => n.endsWith('.lock')));
     const metrics=failed.events.find(e=>e.event==='operation_metrics');assert.equal(metrics.success,false);assert.equal(metrics.phase,'context');assert.equal(metrics.turnMs,null);
   });
+  // Transport verification only: a deliberately non-real key is confined to
+  // this isolated home and loopback server. This is not real-model evidence.
+  fs.writeFileSync(path.join(home,'auth.json'),JSON.stringify({auth_mode:'apikey',OPENAI_API_KEY:'sk-swapctx-loopback-fixture-not-a-real-credential'}));
+  fs.writeFileSync(configFile,fs.readFileSync(configFile,'utf8').replace('requires_openai_auth=false','requires_openai_auth=true'));
+  const priorHome=process.env.CODEX_HOME;process.env.CODEX_HOME=home;
+  try {
+    const requested=new PlainSession({project:foreignProject,env},{codex});const beforeWrite=requests.length;
+    try{await requested.perform('Confirm requested sandbox',()=>{});assert.ok(requests.length>beforeWrite);}
+    catch(error){assert.equal(error.code,'codex_sandbox_mismatch');assert.equal(requests.length,beforeWrite);console.log('LIMITATION: native workspace-write unavailable in this fixture; refusal verified before model request');}
+    check('comparison baseline validates the granted sandbox before model requests',()=>{});
+    const baseline=new PlainSession({project:foreignProject,env},{codex,sandbox:'read-only'});let priorThread;
+    for(let i=0;i<2;i++){
+      const collector=new Collector(),before=requests.length;
+      await baseline.perform('Plain baseline user requirements',e=>collector.emit(e));const evidence=collector.result(priorThread);priorThread=evidence.threadId;
+      assert.ok(requests.length>before);assert.ok(!JSON.stringify(requests.slice(before)).includes('<swapctx_context_v1>'));assert.ok(evidence.usage);assert.equal(evidence.metrics.contextMs,0);
+    }
+    check('comparison baseline starts and resumes through native Codex without SwapCtx packets',()=>assert.ok(priorThread));
+  }finally{if(priorHome===undefined)delete process.env.CODEX_HOME;else process.env.CODEX_HOME=priorHome;}
   console.log(`${checks} native lifecycle checks passed (synthetic provider, model behavior unverified)`);
 })().catch(e => {if (serverFailure) console.error('Fixture failure',serverFailure);console.error(e);process.exitCode = 1;}).finally(() => {
   server.close();assert.equal(path.dirname(root),os.tmpdir());fs.rmSync(root,{recursive:true,force:true});

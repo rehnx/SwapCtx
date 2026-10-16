@@ -1,8 +1,8 @@
 # Real-world Codex pilot
 
-Status on 2026-10-17 (Asia/Calcutta): **login recognized; real-world milestone blocked by this execution sandbox's filesystem and network restrictions**. Tested executable: Codex CLI 0.162.1; Node 24.17.0; Windows; SwapCtx release build with Rust 1.99.0. No storage schema or dependency changes were made.
+Updated status on 2026-10-17 (Asia/Calcutta): **the user completed all eight pilot checks in an ordinary authenticated Windows terminal**. The [successful report](evidence/codex-pilot-2026-10-17-passed.json) has been inspected and preserved. It demonstrates the six coding stages, resumption, manual compaction and superseding-requirement adherence for that run. [Phase 4](PHASE4_LONG_SESSIONS.md) covers longer sessions and natural automatic compaction, which remain unverified. The historical blocked tool-process attempts below are retained separately. Tested executable: Codex CLI 0.162.1; Node 24.17.0; Windows; SwapCtx release build with Rust 1.99.0.
 
-## Observed result
+## Historical tool-process attempts
 
 The original attempt reported `Not logged in` and `authentication_required`. The authenticated follow-up identified an environment mismatch: the tool process runs as `CodexSandboxOffline`; native Codex defaults to that account's home, while `USERPROFILE` identifies the laptop user's profile. The authenticated cache is under the laptop user's Codex home. An unset `CODEX_HOME` therefore selects a different native home. PATH Codex 0.163.0 exhibited the same unauthenticated default; compatibility with that release was not evaluated.
 
@@ -18,7 +18,9 @@ Reproducible follow-up evidence:
 
 The [original machine-readable pilot result](evidence/codex-pilot-2026-10-17.json) is retained as historical evidence. Both pilot reports record `status: "blocked"`, `modelEvaluationStarted: false`, `codingWorkflowStarted: false`, empty checks/operations and false context-use/adherence flags. Their UTC timestamps fall on October 16; the local verification date is October 17. Credentials, account email, prompts and native configuration contents are absent from the reports. No credentials were copied, replaced or printed, and no existing SwapCtx store was used.
 
-| Requested outcome | Current evidence |
+The table below describes those earlier blocked attempts, not the later successful pilot. Current readiness and additional evidence are in [Phase 4](PHASE4_LONG_SESSIONS.md).
+
+| Requested outcome | Historical tool-process evidence |
 | --- | --- |
 | Real-model delivery and requirement adherence | Blocked; no real-model turn completed |
 | Ordinary workspace editing | Blocked; no AI-generated code evaluated |
@@ -81,5 +83,7 @@ The following passed on Windows after the adapter instrumentation changes:
 The authenticated follow-up reran the complete verification command with the updated adapter and all twelve evaluator tests. Hosted CI, Linux execution and online dependency advisory scanning remain unverified, as previously reported. These successful regression suites are not substituted for the blocked real-model gates.
 
 ## Recommended next milestone
+
+The short authenticated pilot has now passed. The current next milestone and executable paired long-session procedure are documented in [Phase 4](PHASE4_LONG_SESSIONS.md). The earlier recommendation below records the state before that externally completed pilot.
 
 Run the authenticated pilot in an execution context with the required filesystem/network access before expanding integrations or changing readiness claims. Then investigate any observed coding/compaction failures, run repeated and longer development sessions including naturally triggered automatic compaction, and measure context retrieval versus session startup and model/tool time. Validate compatibility with a newer Codex release separately; an installed newer binary does not establish protocol compatibility. Preserve the existing version restriction until that evidence exists.

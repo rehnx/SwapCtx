@@ -1,0 +1,207 @@
+{
+  "protocol": "swapctx.codex-pilot",
+  "version": 1,
+  "date": "2026-10-16T21:27:56.151Z",
+  "codexVersion": "0.162.1",
+  "nodeVersion": "24.17.0",
+  "disposableProject": true,
+  "provider": "configured_codex_provider",
+  "status": "passed",
+  "checks": [
+    {
+      "name": "real_provider_context_use_control",
+      "status": "passed"
+    },
+    {
+      "name": "startup_workspace_requirements",
+      "status": "passed"
+    },
+    {
+      "name": "resumed_coding_stage_1",
+      "status": "passed"
+    },
+    {
+      "name": "resumed_coding_stage_2",
+      "status": "passed"
+    },
+    {
+      "name": "native_manual_compaction",
+      "status": "passed"
+    },
+    {
+      "name": "post_compaction_superseded_requirement",
+      "status": "passed"
+    },
+    {
+      "name": "resumed_coding_stage_4",
+      "status": "passed"
+    },
+    {
+      "name": "resumed_coding_stage_5",
+      "status": "passed"
+    }
+  ],
+  "operations": [
+    {
+      "stage": 0,
+      "threadId": "01a1469e-39f7-7ca0-96d6-cbf01585e789",
+      "contextHash": "4b241d293590c77ec9ce2630edc3f5e96efb25c081ae24501a9921981fdd551e",
+      "contextBytes": 2252,
+      "metrics": {
+        "protocol": "swapctx.codex",
+        "version": 1,
+        "event": "operation_metrics",
+        "operation": "turn",
+        "success": true,
+        "phase": "completed",
+        "contextMs": 37,
+        "sessionMs": 1698,
+        "turnMs": 36141,
+        "totalMs": 37948
+      },
+      "toolStarts": 5,
+      "toolFailures": 0,
+      "implementationHash": "67d1024c9862931112ab9f7f6cff51e5a6d77e9278450af4a87720b1ec84d786",
+      "contractHash": "f1d3f5cd8c92a6728f1a26e3e1ba351d8dc43cbac57008a386b6d35b82690415"
+    },
+    {
+      "stage": 1,
+      "threadId": "01a1469e-39f7-7ca0-96d6-cbf01585e789",
+      "contextHash": "4b241d293590c77ec9ce2630edc3f5e96efb25c081ae24501a9921981fdd551e",
+      "contextBytes": 2252,
+      "metrics": {
+        "protocol": "swapctx.codex",
+        "version": 1,
+        "event": "operation_metrics",
+        "operation": "turn",
+        "success": true,
+        "phase": "completed",
+        "contextMs": 44,
+        "sessionMs": 1183,
+        "turnMs": 27011,
+        "totalMs": 28295
+      },
+      "toolStarts": 3,
+      "toolFailures": 0,
+      "implementationHash": "fc897be5fd7e80885fbf32738327f484051cf4a82ac8c9314ab7c69941673096",
+      "contractHash": "f1d3f5cd8c92a6728f1a26e3e1ba351d8dc43cbac57008a386b6d35b82690415"
+    },
+    {
+      "stage": 2,
+      "threadId": "01a1469e-39f7-7ca0-96d6-cbf01585e789",
+      "contextHash": "4b241d293590c77ec9ce2630edc3f5e96efb25c081ae24501a9921981fdd551e",
+      "contextBytes": 2252,
+      "metrics": {
+        "protocol": "swapctx.codex",
+        "version": 1,
+        "event": "operation_metrics",
+        "operation": "turn",
+        "success": true,
+        "phase": "completed",
+        "contextMs": 54,
+        "sessionMs": 1047,
+        "turnMs": 34781,
+        "totalMs": 35964
+      },
+      "toolStarts": 3,
+      "toolFailures": 0,
+      "implementationHash": "209b4a0c990c23b5879451ce68ed520fffcec4251b5d0b7d4fcdb910c51abac2",
+      "contractHash": "f1d3f5cd8c92a6728f1a26e3e1ba351d8dc43cbac57008a386b6d35b82690415"
+    },
+    {
+      "stage": "manual_compaction",
+      "threadId": "01a1469e-39f7-7ca0-96d6-cbf01585e789",
+      "contextHash": "4b241d293590c77ec9ce2630edc3f5e96efb25c081ae24501a9921981fdd551e",
+      "contextBytes": 2252,
+      "metrics": {
+        "protocol": "swapctx.codex",
+        "version": 1,
+        "event": "operation_metrics",
+        "operation": "compact",
+        "success": true,
+        "phase": "completed",
+        "contextMs": 49,
+        "sessionMs": 916,
+        "turnMs": 19321,
+        "totalMs": 20344
+      },
+      "toolStarts": 0,
+      "toolFailures": 0
+    },
+    {
+      "stage": 3,
+      "threadId": "01a1469e-39f7-7ca0-96d6-cbf01585e789",
+      "contextHash": "39542ea16b678567126ca2a086b1382628ae22dbe8b3120aef5de0eef7b4c71a",
+      "contextBytes": 2265,
+      "metrics": {
+        "protocol": "swapctx.codex",
+        "version": 1,
+        "event": "operation_metrics",
+        "operation": "turn",
+        "success": true,
+        "phase": "completed",
+        "contextMs": 54,
+        "sessionMs": 1670,
+        "turnMs": 31329,
+        "totalMs": 33158
+      },
+      "toolStarts": 3,
+      "toolFailures": 0,
+      "implementationHash": "842ef84cfcb96753e7c503b0b5ab643d34b6f65511faa44f4bf567c1d9604a77",
+      "contractHash": "f1d3f5cd8c92a6728f1a26e3e1ba351d8dc43cbac57008a386b6d35b82690415"
+    },
+    {
+      "stage": 4,
+      "threadId": "01a1469e-39f7-7ca0-96d6-cbf01585e789",
+      "contextHash": "39542ea16b678567126ca2a086b1382628ae22dbe8b3120aef5de0eef7b4c71a",
+      "contextBytes": 2265,
+      "metrics": {
+        "protocol": "swapctx.codex",
+        "version": 1,
+        "event": "operation_metrics",
+        "operation": "turn",
+        "success": true,
+        "phase": "completed",
+        "contextMs": 74,
+        "sessionMs": 6282,
+        "turnMs": 32338,
+        "totalMs": 38785
+      },
+      "toolStarts": 3,
+      "toolFailures": 0,
+      "implementationHash": "cf9e42fa21bb78a385d5a8479dcc6c99ec8bb3ff895b4fd79a26afd0bb1c117a",
+      "contractHash": "f1d3f5cd8c92a6728f1a26e3e1ba351d8dc43cbac57008a386b6d35b82690415"
+    },
+    {
+      "stage": 5,
+      "threadId": "01a1469e-39f7-7ca0-96d6-cbf01585e789",
+      "contextHash": "39542ea16b678567126ca2a086b1382628ae22dbe8b3120aef5de0eef7b4c71a",
+      "contextBytes": 2265,
+      "metrics": {
+        "protocol": "swapctx.codex",
+        "version": 1,
+        "event": "operation_metrics",
+        "operation": "turn",
+        "success": true,
+        "phase": "completed",
+        "contextMs": 44,
+        "sessionMs": 1681,
+        "turnMs": 32098,
+        "totalMs": 33921
+      },
+      "toolStarts": 3,
+      "toolFailures": 0,
+      "implementationHash": "2a08b55cbdd3dc4540444b654c519ca1ea522dfb4945961ae18735ddcab3cea0",
+      "contractHash": "f1d3f5cd8c92a6728f1a26e3e1ba351d8dc43cbac57008a386b6d35b82690415"
+    }
+  ],
+  "modelEvaluationStarted": true,
+  "codingWorkflowStarted": true,
+  "contextUseObserved": true,
+  "workspaceAdherenceObserved": true,
+  "guaranteedAdherence": false,
+  "automaticCompactionVerified": false,
+  "longRunningSessionVerified": false,
+  "cleanup": "completed",
+  "ok": true
+}

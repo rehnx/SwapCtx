@@ -153,7 +153,7 @@ fn capabilities() {
     println!("Enforcement: none; no operation is intercepted and no approval is granted");
     println!("Machine context: swapctx.context v1 JSON; read-only snapshot, byte budgets and mandatory coverage");
     println!("Codex: optional managed app-server console for 0.162.1; context-first exec remains available");
-    println!("Lifecycle: managed startup/resume/compaction transport tested with a fixture provider; real-model use unverified");
+    println!("Lifecycle: startup/resume/manual compaction passed a prior real-model pilot; natural automatic recovery unverified");
     println!("Native Codex hooks: delivery unverified; no automatic memory capture or tool-policy enforcement");
     println!("Hidden model state: inaccessible; model use of delivered records is not guaranteed");
     println!("Sensitive values: limited heuristics and output hiding; storage is plaintext");

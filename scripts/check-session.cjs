@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
-const {AppServer,ManagedSession,atomicJson,context} = require('../integrations/codex/session.cjs');
+const {AppServer,ManagedSession,atomicJson,context,tokenUsage} = require('../integrations/codex/session.cjs');
 const root = fs.mkdtempSync(path.join(os.tmpdir(),'swapctx-session-tests-'));
 const exe = path.resolve(process.argv[2] || (process.platform === 'win32'?'target/debug/swapctx.exe':'target/debug/swapctx'));
 const server = `
@@ -47,6 +47,35 @@ test('UTF-8 framing survives byte-by-byte fragmentation',async()=>{
 test('out-of-order concurrent responses resolve their own request IDs',async()=>{
   const p=api('reorder');try {const [a,b]=await Promise.all([p.call('first',{}),p.call('second',{})]);assert.equal(a.value,1);assert.equal(b.value,2);} finally {await p.close();}
 });
+test('large fragmented frames are assembled without losing UTF-8 or notifications',async()=>{
+  const p=api('hang'),seen=[];p.on('notification',m=>seen.push(m));
+  const frame=Buffer.from(JSON.stringify({method:'fixture/large',params:{text:'ü'.repeat(300000)}})+'\n');
+  try {for(let offset=0;offset<frame.length;offset+=63)p.consume(frame.subarray(offset,offset+63));assert.equal(seen.length,1);assert.equal(seen[0].params.text.length,300000);assert.equal(p.bufferBytes,0);assert.ok(p.buffer.length<=8*1024*1024);} finally {await p.close();}
+});
+test('coalesced valid frames may exceed the per-frame limit in aggregate',async()=>{
+  const p=api('hang');let count=0;p.on('notification',()=>count++);
+  const frame=JSON.stringify({method:'fixture/batch',params:{text:'x'.repeat(65536)}})+'\n';
+  try {p.consume(Buffer.from(frame.repeat(130)));assert.equal(count,130);assert.equal(p.dead,false);assert.equal(p.bufferBytes,0);} finally {await p.close();}
+});
+test('oversized fragmented frames stop before a ninth MiB can accumulate',async()=>{
+  const p=api('hang');let code;p.on('disconnect',value=>code=value);
+  try {const chunk=Buffer.alloc(65536,120);for(let i=0;i<129;i++)p.consume(chunk);assert.equal(code,'codex_protocol_oversized');assert.ok(p.buffer.length<=8*1024*1024);} finally {await p.close();}
+});
+test('usage snapshots retain only safe integer counters and never payload text',()=>{
+  const counters={inputTokens:10,cachedInputTokens:2,outputTokens:3,reasoningOutputTokens:1,totalTokens:13};
+  const value={last:{...counters},total:{...counters,cacheWriteInputTokens:1},modelContextWindow:100000,private:'password=SECRET'};
+  assert.deepEqual(tokenUsage(value),{last:counters,total:{...counters,cacheWriteInputTokens:1},modelContextWindow:100000});
+  assert.equal(tokenUsage({...value,last:{...counters,inputTokens:Number.MAX_SAFE_INTEGER+1}}),null);
+  assert.equal(tokenUsage({...value,total:{...counters,outputTokens:-1}}),null);
+  assert.equal(tokenUsage({...value,modelContextWindow:'SECRET'}),null);
+});
+test('usage notifications are observable and malformed counters are explicit',()=>{
+  const events=[],session=new ManagedSession({}, {},'',event=>events.push(event));
+  const counters={inputTokens:2,cachedInputTokens:0,outputTokens:1,reasoningOutputTokens:0,totalTokens:3};
+  session.observe({method:'thread/tokenUsage/updated',params:{tokenUsage:{last:counters,total:counters}}});
+  session.observe({method:'thread/tokenUsage/updated',params:{tokenUsage:{last:{inputTokens:'SECRET'}}}});
+  assert.equal(events[0].event,'token_usage');assert.equal(events[0].modelContextWindow,null);assert.deepEqual(events[1],{event:'warning',code:'invalid_token_usage'});assert.ok(!JSON.stringify(events).includes('SECRET'));
+});
 test('interactive approval requests are explicitly rejected, never granted',async()=>{
   const p=api('request');const observed=[];
   p.on('notification',m=>observed.push(m));
@@ -84,6 +113,7 @@ test('failed retrieval reports measured phase without implying model delivery',a
   const session=new ManagedSession({swapctx:exe,dataDir:root,project},{},path.join(root,'never-created-state'),event=>events.push(event));
   await assert.rejects(session.perform('must not launch'),e=>e.code==='context_unavailable');
   assert.equal(events.length,1);assert.equal(events[0].event,'operation_metrics');assert.equal(events[0].success,false);assert.equal(events[0].phase,'context');assert.equal(events[0].sessionMs,null);assert.equal(events[0].turnMs,null);assert.ok(events[0].totalMs>=0);assert.equal(fs.existsSync(session.stateFile),false);
+  for(const field of ['adapterCpuUserMs','adapterCpuSystemMs','adapterRssBytes','adapterHeapUsedBytes'])assert.ok(Number.isFinite(events[0][field])&&events[0][field]>=0);
 });
 
 after(()=>{assert.equal(path.dirname(root),os.tmpdir());fs.rmSync(root,{recursive:true,force:true});});
