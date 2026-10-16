@@ -50,6 +50,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Context checks failed' }
           node scripts/check-session.cjs $taskExecutable
           if ($LASTEXITCODE -ne 0) { throw 'Session transport checks failed' }
+          node scripts/check-pilot-harness.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Pilot evaluator checks failed' }
   advisories:
     runs-on: ubuntu-latest
     steps:

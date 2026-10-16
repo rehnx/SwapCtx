@@ -1,0 +1,24 @@
+{
+  "protocol": "swapctx.codex-pilot",
+  "version": 1,
+  "date": "2026-10-16T20:35:02.795Z",
+  "codexVersion": "0.162.1",
+  "nodeVersion": "24.17.0",
+  "disposableProject": true,
+  "provider": "configured_codex_provider",
+  "status": "blocked",
+  "checks": [],
+  "operations": [],
+  "modelEvaluationStarted": false,
+  "codingWorkflowStarted": false,
+  "contextUseObserved": false,
+  "workspaceAdherenceObserved": false,
+  "guaranteedAdherence": false,
+  "automaticCompactionVerified": false,
+  "longRunningSessionVerified": false,
+  "error": {
+    "code": "authentication_required"
+  },
+  "cleanup": "completed",
+  "ok": false
+}

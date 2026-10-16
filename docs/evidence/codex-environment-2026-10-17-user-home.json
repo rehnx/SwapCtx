@@ -1,0 +1,34 @@
+{
+  "protocol": "swapctx.codex-diagnostic",
+  "version": 1,
+  "date": "2026-10-16T20:52:14.355Z",
+  "testedCodexVersion": "0.162.1",
+  "modelTurnsRequested": 0,
+  "credentialContentsReadByScript": false,
+  "credentialCopiesCreated": false,
+  "codexHomeOverride": true,
+  "detectedCodexVersion": "0.162.1",
+  "loginStatus": {
+    "exit": 0,
+    "loggedIn": true,
+    "reportsNotLoggedIn": false
+  },
+  "appServerInitialized": false,
+  "error": {
+    "code": "codex_startup_permission_denied"
+  },
+  "network": [
+    {
+      "host": "chatgpt.com",
+      "reachable": false,
+      "errorCode": "EACCES"
+    },
+    {
+      "host": "api.openai.com",
+      "reachable": false,
+      "errorCode": "EACCES"
+    }
+  ],
+  "note": "Login status is not inference access; network probes do not verify model entitlement. No model turn was requested.",
+  "status": "blocked"
+}

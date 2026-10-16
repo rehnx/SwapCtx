@@ -82,10 +82,20 @@ class AppServer extends EventEmitter {
     this.child = spawn(exe,['app-server','--listen','stdio://'],{cwd,env,stdio:['pipe','pipe','pipe'],shell:false,windowsHide:true});
     this.closed = new Promise(resolve => this.child.once('close',resolve));
     this.child.stdout.on('data', chunk => this.consume(chunk));
-    this.child.stderr.resume(); // Do not leak raw provider/config diagnostics or saved text.
-    this.child.stdin.on('error', () => this.abort('codex_connection_closed'));
+    this.initialized = false;this.startupPermissionDenied = false;this.startupStderrTail = '';
+    this.child.stderr.on('data', chunk => {
+      if (this.initialized) return;
+      const text = this.startupStderrTail + chunk.toString('utf8');
+      this.startupPermissionDenied ||= /Access is denied|Permission denied|\bEACCES\b|\(os error 5\)/i.test(text);
+      this.startupStderrTail = text.slice(-128);
+    }); // Drain stderr without exposing raw provider/config diagnostics or saved text.
+    const disconnected = () => {
+      this.startupStderrTail = '';
+      this.abort(!this.initialized && this.startupPermissionDenied ? 'codex_startup_permission_denied' : 'codex_connection_closed');
+    };
+    this.child.stdin.on('error', disconnected);
     this.child.on('error', () => this.abort('codex_unavailable'));
-    this.child.on('close', () => this.abort('codex_connection_closed'));
+    this.child.on('close', disconnected);
   }
   abort(code) {
     if (this.dead) return;
@@ -133,6 +143,7 @@ class AppServer extends EventEmitter {
   async initialize() {
     const result = await this.call('initialize',{clientInfo:{name:'swapctx_lifecycle',version:'1.0.0'}});
     if (typeof result.codexHome !== 'string') fail('codex_protocol_invalid');
+    this.initialized = true;this.startupStderrTail = '';
     this.notify('initialized');return result;
   }
   waitTurn(threadId, emit = () => {}, timeout = 600000) {
@@ -219,26 +230,45 @@ class ManagedSession {
     if (m.method === 'item/started' && m.params.item?.type === 'contextCompaction') this.emit({event:'compaction_started'});
     if (m.method === 'item/completed' && m.params.item?.type === 'contextCompaction') this.emit({event:'compaction_completed'});
     if (m.method === 'item/started' && ['commandExecution','fileChange','mcpToolCall','dynamicToolCall','webSearch'].includes(m.params.item?.type)) this.emit({event:'tool_started',kind:m.params.item.type});
+    if (m.method === 'item/completed' && ['commandExecution','fileChange','mcpToolCall','dynamicToolCall'].includes(m.params.item?.type)) {
+      const item = m.params.item;
+      // Observable outcomes only; do not echo commands, arguments or tool output.
+      const status = ['completed','failed','declined'].includes(item.status) ? item.status : 'unknown';
+      const value = {event:'tool_completed',kind:item.type,status};
+      if (Number.isSafeInteger(item.exitCode)) value.exitCode = item.exitCode;
+      this.emit(value);
+    }
     if (m.method === 'hook/completed') this.emit({event:'hook_observed',status:m.params.run?.status});
     if (m.method === 'warning') this.emit({event:'warning',code:'codex_runtime_warning'});
   }
   async perform(prompt, {compact = false, fresh = false} = {}) {
-    const selected = context(this.options);
-    const reason = compact ? 'compact' : fs.existsSync(this.stateFile) && !fresh ? 'resume' : 'startup';
-    const {api,threadId} = await this.open(reason,selected,fresh);
-    // A fresh process avoids ignored overrides on already-loaded threads.
-    // Changed snapshots also need explicit injection into resumed prompt history.
-    const pending = api.waitTurn(threadId,m => this.observe(m));
-    pending.promise.catch(() => {}); // A concurrent RPC failure is handled below.
+    const started = performance.now();
+    let api,pending,phase = 'context',success = false,contextMs = null,sessionMs = null,turnMs = null;
     try {
+      const selected = context(this.options);
+      contextMs = Math.round(performance.now()-started);phase = 'session';
+      const sessionStarted = performance.now();
+      const opened = await this.open(compact?'compact':fs.existsSync(this.stateFile) && !fresh?'resume':'startup',selected,fresh);
+      api = opened.api;const threadId = opened.threadId;
+      sessionMs = Math.round(performance.now()-sessionStarted);phase = 'turn';
+      // A fresh process avoids ignored overrides on already-loaded threads.
+      // Changed snapshots also need explicit injection into resumed prompt history.
+      pending = api.waitTurn(threadId,m => this.observe(m));
+      pending.promise.catch(() => {}); // A concurrent RPC failure is handled below.
+      const turnStarted = performance.now();
       if (compact) await api.call('thread/compact/start',{threadId});
       else await api.call('turn/start',{threadId,input:[{type:'text',text:prompt}]});
       const turn = await pending.promise;
+      turnMs = Math.round(performance.now()-turnStarted);
       if (turn?.status !== 'completed') fail('codex_turn_failed');
+      success = true;phase = 'completed';
       this.emit({event:'turn_completed',threadId,status:turn.status,operation:compact?'compact':'turn'});
       return {threadId,contextHash:selected.hash};
-    } catch (e) {pending.cancel();throw e;}
-    finally {await api.close();this.current = null;}
+    } catch (e) {pending?.cancel();throw e;}
+    finally {
+      if (api) await api.close();this.current = null;
+      this.emit({event:'operation_metrics',operation:compact?'compact':'turn',success,phase,contextMs,sessionMs,turnMs,totalMs:Math.round(performance.now()-started)});
+    }
   }
   interrupt(code = 'codex_interrupted') {this.current?.abort(code);}
 }

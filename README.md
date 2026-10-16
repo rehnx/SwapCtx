@@ -6,7 +6,9 @@ SwapCtx preserves requirements, decisions, notes, and rules that you explicitly 
 
 ## Foundation status
 
-Phase 3 adds a managed Codex console with verified startup, resume and compaction context transport through the actual Codex runtime and a synthetic local provider. **Real-model context use remains unverified because authentication is unavailable.** Native TUI hook delivery remains unverified. See [Phase 3 usage, evidence and limits](docs/PHASE3_CODEX_LIFECYCLE.md). [Context protocol v1](docs/CONTEXT_PROTOCOL.md), [the earlier readiness milestone](docs/CODEX_READINESS.md), [Phase 2 verification](docs/PHASE2_RELIABILITY.md) and [the Phase 1 audit](docs/FOUNDATION_AUDIT.md) document the foundation. Schema 3 and dependencies remain unchanged. Linux execution and automated dependency advisory scanning remain unverified.
+The [real-world Codex pilot](docs/REAL_WORLD_CODEX_PILOT.md) recognizes the configured login with the correct Codex home, but this execution sandbox denies app-server filesystem access and outbound provider connections. Its recorded attempts made no model turns; real-world adherence, editing and recovery remain unverified. Reproducible home/login/network diagnostics, local timing/tool outcomes and an independent coding evaluator supplement the controlled tests.
+
+Phase 3 adds a managed Codex console with verified startup, resume and compaction context transport through the actual Codex runtime and a synthetic local provider. **Real-model context use remains unverified; the authenticated pilot is blocked by execution-environment restrictions.** Native TUI hook delivery remains unverified. See [Phase 3 usage, evidence and limits](docs/PHASE3_CODEX_LIFECYCLE.md). [Context protocol v1](docs/CONTEXT_PROTOCOL.md), [the earlier readiness milestone](docs/CODEX_READINESS.md), [Phase 2 verification](docs/PHASE2_RELIABILITY.md) and [the Phase 1 audit](docs/FOUNDATION_AUDIT.md) document the foundation. Schema 3 and dependencies remain unchanged. Linux execution and automated dependency advisory scanning remain unverified.
 
 ## Build and verify
 
@@ -32,6 +34,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify.ps1 -Re
 The execution-policy argument applies only to that process. The benchmark is optional and ignored during ordinary tests. Windows/Linux CI and an online `cargo audit` job are supplied but have not run here. Publish the source folder at repository root so GitHub discovers `.github/workflows/ci.yml`.
 
 Optional Node.js 24 contract checks: `node scripts/check-sql.cjs`, `node scripts/check-context.cjs target/release/swapctx.exe` and `node scripts/check-session.cjs target/release/swapctx.exe`, or add `-ContextTests` to verification. Add `-CodexPath 'C:\absolute\codex.exe'` for the isolated loopback Codex 0.162.1 acceptance suites. `-ModelTests` additionally opts into the separate real-provider context-use evaluation using generated probe data and Codex's configured authentication. These checks supplement native tests. Node is only a runtime dependency of the optional Codex adapters; ordinary Rust memory commands remain standalone.
+
+`-ContextTests` also runs `scripts/check-pilot-harness.cjs` without provider requests. Explicit `-PilotTests -CodexPath 'C:\absolute\codex.exe'` adds the authenticated disposable coding pilot. See [pilot instructions and blocked evidence](docs/REAL_WORLD_CODEX_PILOT.md).
 
 ## Machine context and Codex handoff
 

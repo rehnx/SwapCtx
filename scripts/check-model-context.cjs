@@ -19,12 +19,13 @@ async function baseline() {
   const api = new AppServer(codex,project);
   try {
     await api.initialize();const account = await api.call('account/read',{refreshToken:false});
+    if(account.requiresOpenaiAuth!==true) {const e=new Error('Provider authentication cannot be verified');e.code='provider_authentication_unverified';throw e;}
     if (account.requiresOpenaiAuth && !account.account) {const e=new Error('Codex authentication required');e.code='authentication_required';throw e;}
     const thread = await api.call('thread/start',{cwd:project,ephemeral:true,sandbox:'read-only',approvalPolicy:'never'});
     let text = '',toolSeen = false;
     const waiting = api.waitTurn(thread.thread.id,m=>{
       if (m.method === 'item/agentMessage/delta') text += m.params.delta;
-      if (m.method === 'item/started' && ['commandExecution','fileChange','mcpToolCall','dynamicToolCall'].includes(m.params.item?.type)) toolSeen = true;
+      if (m.method === 'item/started' && ['commandExecution','fileChange','mcpToolCall','dynamicToolCall','webSearch'].includes(m.params.item?.type)) toolSeen = true;
     },60000);waiting.promise.catch(()=>{});
     try {
       await api.call('turn/start',{threadId:thread.thread.id,input:[{type:'text',text:prompt}]});
@@ -41,7 +42,7 @@ async function baseline() {
   let text = '',toolSeen = false;
   const managed = new ManagedSession({swapctx:exe,dataDir,project},{codex,sandbox:'read-only'},path.join(root,'state.json'),e=>{if(e.event==='text')text+=e.text;if(e.event==='tool_started')toolSeen=true;});
   async function checkedTurn(value,label) {
-    text = '';toolSeen=false;await managed.perform(prompt);assert.equal(text.trim(),value,label+' did not use current selected knowledge');assert.equal(toolSeen,false,'Unexpected tool activity');report.checks.push(label);
+    text = '';toolSeen=false;await managed.perform(prompt);assert.equal(text.trim(),value,label+' did not use current selected knowledge');assert.equal(toolSeen,false,'Unexpected tool activity');report.checks.push(label);report.contextUseObserved=true;
   }
   const a=crypto.randomBytes(16).toString('hex');cli(['memory','add','The project release identifier is '+a,'--kind','requirement']);await checkedTurn(a,'startup nonce recalled');
   const b=crypto.randomBytes(16).toString('hex');cli(['memory','supersede','1','The project release identifier is '+b]);await checkedTurn(b,'resumption uses superseding nonce');
@@ -50,6 +51,6 @@ async function baseline() {
   report.ok=true;report.contextUseObserved=true;report.guaranteedAdherence=false;
   console.log(JSON.stringify(report,null,2));
 })().catch(e=>{
-  report.ok=false;report.contextUseObserved=false;report.error={code:e.code || 'model_evaluation_failed'};
+  report.ok=false;report.contextUseObserved=report.contextUseObserved===true;report.error={code:e.code || 'model_evaluation_failed'};
   console.log(JSON.stringify(report,null,2));process.exitCode=e.code==='authentication_required'?2:1;
 }).finally(()=>{assert.equal(path.dirname(root),os.tmpdir());fs.rmSync(root,{recursive:true,force:true});});

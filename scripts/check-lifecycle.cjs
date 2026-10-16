@@ -90,6 +90,8 @@ async function run(input, status = 0, flags = [], cwd = project) {
   check('startup sends selected context with existing developer instructions preserved',() => {
     assert.ok(first.sent.length > 0);const text = developer(first.sent.at(-1).body);assert.ok(text.includes('REQUIREMENT_START_49F20'));assert.ok(text.includes('BASELINE_POLICY_MUST_REMAIN'));
     assert.ok(!JSON.stringify(first.sent).includes('WITHHOLD_SECRET'));assert.ok(first.events.some(e => e.event === 'turn_completed'));assert.equal(first.events.find(e => e.event === 'session_ready').resumed,false);
+    const metrics=first.events.find(e=>e.event==='operation_metrics');assert.equal(metrics.success,true);assert.equal(metrics.phase,'completed');
+    for(const field of ['contextMs','sessionMs','turnMs','totalMs'])assert.ok(Number.isSafeInteger(metrics[field])&&metrics[field]>=0);
   });
   cli(['memory','supersede','1','REQUIREMENT_RESUME_49F20']);
   const second = await run('Explain the updated requirement\n',0,[],path.join(project,'nested'));
@@ -167,6 +169,7 @@ async function run(input, status = 0, flags = [], cwd = project) {
   const failed = await run('Should never reach provider\n',1);
   check('incomplete requirements refuse before a provider request and leave context data unchanged',() => {
     assert.equal(failed.sent.length,0);assert.equal(JSON.parse(failed.stderr).error.code,'mandatory_context_incomplete');assert.ok(!fs.readdirSync(path.join(data,'codex')).some(n => n.endsWith('.lock')));
+    const metrics=failed.events.find(e=>e.event==='operation_metrics');assert.equal(metrics.success,false);assert.equal(metrics.phase,'context');assert.equal(metrics.turnMs,null);
   });
   console.log(`${checks} native lifecycle checks passed (synthetic provider, model behavior unverified)`);
 })().catch(e => {if (serverFailure) console.error('Fixture failure',serverFailure);console.error(e);process.exitCode = 1;}).finally(() => {

@@ -4,11 +4,12 @@ param(
     [switch]$Benchmark,
     [switch]$ContextTests,
     [switch]$ModelTests,
+    [switch]$PilotTests,
     [string]$CodexPath,
     [string]$CargoHome
 )
 $ErrorActionPreference = 'Stop'
-if ($ModelTests -and !$CodexPath) { throw 'ModelTests requires an explicit CodexPath and uses its configured model provider' }
+if (($ModelTests -or $PilotTests) -and !$CodexPath) { throw 'ModelTests/PilotTests require an explicit CodexPath and use its configured model provider' }
 $taskProjectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $taskToolchainText = Get-Content -LiteralPath (Join-Path $taskProjectRoot 'rust-toolchain.toml') -Raw
 $taskVersion = [regex]::Match($taskToolchainText, 'channel\s*=\s*"([^"]+)"').Groups[1].Value
@@ -63,6 +64,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Context checks failed' }
         & $taskNode scripts/check-session.cjs target/release/swapctx.exe
         if ($LASTEXITCODE -ne 0) { throw 'Session transport checks failed' }
+        & $taskNode scripts/check-pilot-harness.cjs
+        if ($LASTEXITCODE -ne 0) { throw 'Pilot evaluator checks failed' }
         if ($CodexPath) {
             & $taskNode scripts/check-codex.cjs $CodexPath target/release/swapctx.exe
             if ($LASTEXITCODE -ne 0) { throw 'Codex boundary checks failed' }
@@ -71,6 +74,10 @@ try {
             if ($ModelTests) {
                 & $taskNode scripts/check-model-context.cjs $CodexPath target/release/swapctx.exe
                 if ($LASTEXITCODE -ne 0) { throw 'Real-provider context-use verification did not pass; inspect its structured report' }
+            }
+            if ($PilotTests) {
+                & $taskNode scripts/check-pilot.cjs $CodexPath target/release/swapctx.exe
+                if ($LASTEXITCODE -ne 0) { throw 'Real-provider coding pilot did not pass; inspect its structured report' }
             }
         }
     }
