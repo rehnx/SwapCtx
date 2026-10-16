@@ -22,6 +22,7 @@ pub fn snapshot(source: &Connection, destination: &Path) -> Result<()> {
         .unwrap_or(Path::new("."));
     let staged = tempfile::NamedTempFile::new_in(parent)?.into_temp_path();
     let mut target = Connection::open_with_flags(&staged, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+    crate::storage::secure_connection(&target)?;
     target.busy_timeout(Duration::from_secs(1))?;
     target.pragma_update(None, "foreign_keys", "ON")?;
     {

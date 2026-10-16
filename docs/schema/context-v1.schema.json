@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SwapCtx context protocol v1",
+  "type": "object",
+  "required": ["protocol", "version", "ok", "records"],
+  "properties": {
+    "protocol": {"const": "swapctx.context"},
+    "version": {"const": 1},
+    "ok": {"type": "boolean"},
+    "records": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/record"}}
+  },
+  "oneOf": [
+    {
+      "required": ["error"],
+      "properties": {
+        "ok": {"const": false},
+        "records": {"maxItems": 0},
+        "error": {"type": "object", "required": ["code", "message"], "properties": {"code": {"type": "string"}, "message": {"type": "string"}}}
+      }
+    },
+    {
+      "required": ["generated_unix", "schema_version", "project", "policy", "budget", "coverage", "omitted", "scan", "boundary_rules", "limitations"],
+      "properties": {
+        "ok": {"const": true},
+        "generated_unix": {"type": "integer", "minimum": 1},
+        "schema_version": {"const": 3},
+        "project": {"type": "object", "required": ["root"], "properties": {"root": {"type": "string", "minLength": 1}}},
+        "policy": {
+          "type": "object", "required": ["ranking", "fresh_only", "conflicts_excluded", "unknown_provenance_excluded", "secret_like_records_excluded", "scan_limit"],
+          "properties": {
+            "ranking": {"const": "requirements_then_term_matches_then_recency"},
+            "fresh_only": {"type": "boolean"}, "conflicts_excluded": {"type": "boolean"}, "unknown_provenance_excluded": {"type": "boolean"},
+            "secret_like_records_excluded": {"const": true}, "scan_limit": {"const": 5000}
+          }
+        },
+        "budget": {
+          "type": "object", "required": ["max_bytes", "bytes_used", "max_records", "unit"],
+          "properties": {"max_bytes": {"type": "integer", "minimum": 2048, "maximum": 131072}, "bytes_used": {"$ref": "#/$defs/count"}, "max_records": {"type": "integer", "minimum": 1, "maximum": 100}, "unit": {"const": "utf8_json_bytes"}}
+        },
+        "coverage": {
+          "type": "object", "required": ["active_valid_requirements", "requirements_returned", "boundary_rules_total", "boundary_rules_returned", "mandatory_context_complete", "review_required_records"],
+          "properties": {"active_valid_requirements": {"$ref": "#/$defs/count"}, "requirements_returned": {"$ref": "#/$defs/count"}, "boundary_rules_total": {"$ref": "#/$defs/count"}, "boundary_rules_returned": {"$ref": "#/$defs/count"}, "mandatory_context_complete": {"type": "boolean"}, "review_required_records": {"$ref": "#/$defs/count"}}
+        },
+        "omitted": {
+          "type": "object", "required": ["inactive_or_invalid", "stale", "conflicted", "unknown_provenance", "sensitive", "budget", "record_limit"],
+          "properties": {"inactive_or_invalid": {"$ref": "#/$defs/count"}, "stale": {"$ref": "#/$defs/count"}, "conflicted": {"$ref": "#/$defs/count"}, "unknown_provenance": {"$ref": "#/$defs/count"}, "sensitive": {"$ref": "#/$defs/count"}, "budget": {"$ref": "#/$defs/count"}, "record_limit": {"$ref": "#/$defs/count"}}
+        },
+        "scan": {"type": "object", "required": ["candidates_examined", "truncated"], "properties": {"candidates_examined": {"type": "integer", "minimum": 0, "maximum": 5000}, "truncated": {"type": "boolean"}}},
+        "boundary_rules": {"type": "array", "items": {"$ref": "#/$defs/rule"}},
+        "limitations": {
+          "type": "object", "required": ["provenance_authenticated", "native_context_expansion", "enforcement", "agent_receipt_verified", "semantic_ranking"],
+          "properties": {"provenance_authenticated": {"const": false}, "native_context_expansion": {"const": false}, "enforcement": {"const": false}, "agent_receipt_verified": {"const": false}, "semantic_ranking": {"const": false}}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "count": {"type": "integer", "minimum": 0},
+    "nullableTime": {"type": ["integer", "null"], "minimum": 1},
+    "record": {
+      "type": "object", "required": ["id", "kind", "content", "created_at", "key", "expires_unix", "reviewed_unix", "origin", "freshness", "conflicted", "provenance_status", "matched_terms", "selection_reason"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^-?[0-9]+$"}, "kind": {"type": "string"}, "content": {"type": "string"}, "created_at": {"type": "string"}, "key": {"type": ["string", "null"]},
+        "expires_unix": {"$ref": "#/$defs/nullableTime"}, "reviewed_unix": {"$ref": "#/$defs/nullableTime"},
+        "origin": {"type": "object", "required": ["id", "source", "actor", "registered_unix", "authenticated"], "properties": {"id": {"type": "string", "pattern": "^[0-9a-f]{32}$"}, "source": {"type": "string"}, "actor": {"type": "string"}, "registered_unix": {"type": "integer", "minimum": 1}, "authenticated": {"const": false}}},
+        "freshness": {"enum": ["fresh", "stale"]}, "conflicted": {"type": "boolean"}, "provenance_status": {"enum": ["self_reported", "unknown"]}, "matched_terms": {"type": "integer", "minimum": 0, "maximum": 16}, "selection_reason": {"enum": ["project_requirement", "query_terms", "recent"]}
+      }
+    },
+    "rule": {"type": "object", "required": ["id", "pattern", "reason", "policy", "enforced"], "properties": {"id": {"type": "string", "pattern": "^-?[0-9]+$"}, "pattern": {"type": "string"}, "reason": {"type": "string"}, "policy": {"enum": ["deny", "ask", "audit"]}, "enforced": {"const": false}}}
+  }
+}

@@ -1,11 +1,15 @@
 //! Local-only external context records and explicit boundary-policy checks.
 mod backup;
+mod codex;
+mod context;
 mod display;
+mod history;
 mod memory;
 mod paths;
 mod protect;
 mod sensitive;
 mod storage;
+mod transfer;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -28,6 +32,20 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    /// Optional managed Codex console; requires Node 24+ and configured Codex 0.162.1.
+    Codex {
+        #[arg(long)]
+        node: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+        #[command(subcommand)]
+        action: codex::Action,
+    },
+    /// Emit a versioned, budgeted JSON context packet through a read-only snapshot.
+    Context {
+        #[command(flatten)]
+        request: context::Request,
+    },
     /// Register exactly the current directory as a project.
     Init,
     Status,
@@ -47,6 +65,22 @@ enum Command {
     /// Create a consistent plaintext SQLite snapshot; never overwrite a file.
     Backup {
         destination: PathBuf,
+    },
+    /// Export only the selected project's context to a portable plaintext SQLite bundle.
+    Export {
+        destination: PathBuf,
+    },
+    /// Preview a project bundle; --apply transactionally merges by stable origin IDs.
+    Import {
+        source: PathBuf,
+        #[arg(long)]
+        apply: bool,
+        #[arg(long)]
+        allow_sensitive: bool,
+    },
+    /// Restore a verified whole-store snapshot into a NEW explicit data directory.
+    Restore {
+        source: PathBuf,
     },
 }
 
@@ -111,26 +145,52 @@ fn escape_like(term: &str) -> String {
 fn capabilities() {
     println!("External memory: explicit local SQLite records; no native model context expansion");
     println!("Retrieval: literal substring search, active/history filters, explicit expiry and conflict keys");
+    println!(
+        "Provenance: self-reported origins and transactional lifecycle history; no tamper proofing"
+    );
+    println!("Recovery: project SQLite export/import, consistent whole-store backup, restore into a new explicit directory");
     println!("Boundary policies: deny/ask/audit; manual snapshot checks only");
     println!("Enforcement: none; no operation is intercepted and no approval is granted");
-    println!("Agent integrations: none; hidden model state: inaccessible");
+    println!("Machine context: swapctx.context v1 JSON; read-only snapshot, byte budgets and mandatory coverage");
+    println!("Codex: optional managed app-server console for 0.162.1; context-first exec remains available");
+    println!("Lifecycle: managed startup/resume/compaction transport tested with a fixture provider; real-model use unverified");
+    println!("Native Codex hooks: delivery unverified; no automatic memory capture or tool-policy enforcement");
+    println!("Hidden model state: inaccessible; model use of delivered records is not guaranteed");
     println!("Sensitive values: limited heuristics and output hiding; storage is plaintext");
-    println!("Network clients and telemetry: none");
+    println!("Rust network clients and telemetry: none; optional Codex commands use Codex's configured provider and history");
 }
 
 fn run(cli: Cli) -> Result<u8> {
+    if let Command::Codex { node, json, action } = cli.command {
+        return codex::execute(storage_path(cli.data_dir)?, node, json, action);
+    }
+    if let Command::Context { request } = cli.command {
+        return Ok(context::execute(storage_path(cli.data_dir), request));
+    }
     if matches!(cli.command, Command::Capabilities) {
         capabilities();
         return Ok(0);
     }
+    let explicit_data_dir = cli.data_dir.is_some();
     let db_path = storage_path(cli.data_dir)?;
+    if let Command::Restore { source } = &cli.command {
+        // The default store is never a restore target.
+        if !explicit_data_dir {
+            bail!("Restore requires an explicit --data-dir pointing to a new directory");
+        }
+        transfer::restore(source, &db_path)?;
+        println!(
+            "Restored verified snapshot into a new data directory; no existing store was replaced"
+        );
+        return Ok(0);
+    }
     if matches!(cli.command, Command::Privacy) {
         capabilities();
         println!("Storage: {}", safe(&db_path.display().to_string()));
         println!("Data is NOT encrypted at rest. Local account permissions apply.");
         println!("External coding agents retain their own network behavior.");
         println!(
-            "Building from source may download dependencies; the executable makes no AI calls."
+                "Building from source may download dependencies; optional Codex commands can submit model requests."
         );
         return Ok(0);
     }
@@ -139,6 +199,7 @@ fn run(cli: Cli) -> Result<u8> {
         || match &cli.command {
             Command::Protect { action } => action.writable(),
             Command::Memory { action } => action.writable(),
+            Command::Import { apply, .. } => *apply,
             _ => false,
         };
     let mut conn = storage::open(&db_path, create, writable)?;
@@ -202,6 +263,12 @@ fn run(cli: Cli) -> Result<u8> {
         }
         Command::Protect { action } => return protect::run(&mut conn, id, &cwd, &root, action),
         Command::Memory { action } => memory::run(&mut conn, id, action)?,
+        Command::Export { destination } => transfer::export(&mut conn, id, &destination)?,
+        Command::Import {
+            source,
+            apply,
+            allow_sensitive,
+        } => transfer::import(&mut conn, id, &source, apply, allow_sensitive)?,
         _ => unreachable!("handled before project lookup"),
     }
     Ok(0)

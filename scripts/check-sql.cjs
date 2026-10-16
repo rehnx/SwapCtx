@@ -9,6 +9,7 @@ const source = fs.readFileSync(path.join(root, 'src/storage.rs'), 'utf8');
 const decode = raw => JSON.parse(raw.replace(/\r/g, '\\r').replace(/\n/g, '\\n'));
 const base = decode(source.match(/tx\.execute_batch\(\s*("(?:[^"\\]|\\.)*")/)[1]);
 const migration = fs.readFileSync(path.join(root, 'src/schema_v2.sql'), 'utf8');
+const provenance = fs.readFileSync(path.join(root, 'src/schema_v3.sql'), 'utf8');
 const original = fs.readFileSync(path.join(root, 'tests/fixtures/v0.sql'), 'utf8');
 const version = Number(source.match(/SCHEMA_VERSION:\s*i64\s*=\s*(\d+)/)[1]);
 const app = Number(source.match(/APPLICATION_ID:\s*i64\s*=\s*(0x[0-9a-fA-F]+)/)[1]);
@@ -23,6 +24,7 @@ function upgrade(conn) {
   try {
     conn.exec(base);
     if (conn.prepare('PRAGMA user_version').get().user_version < 2) conn.exec(migration);
+    if (conn.prepare('PRAGMA user_version').get().user_version < 3) conn.exec(provenance);
     conn.exec(`PRAGMA application_id=${app}; PRAGMA user_version=${version}; COMMIT`);
   } catch (e) { conn.exec('ROLLBACK'); throw e; }
 }
@@ -33,7 +35,7 @@ check('additive migration preserves original IDs and content', () => {
 });
 check('repeated initialization is idempotent', () => {
   upgrade(db);
-  assert.equal(db.prepare("SELECT count(*) AS n FROM sqlite_schema WHERE type='table'").get().n, 5);
+  assert.equal(db.prepare("SELECT count(*) AS n FROM sqlite_schema WHERE type='table'").get().n, 7);
 });
 check('invalid policies and orphaned policy references are rejected', () => {
   db.exec("INSERT INTO rules(id,project_id,pattern,reason) VALUES(9,7,'src/**','review')");
@@ -69,6 +71,19 @@ check('actual migration failure rolls back DDL and preserves the original store'
 check('integrity and foreign keys remain valid after lifecycle changes', () => {
   assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
   assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0);
+});
+check('legacy origins are explicitly unknown and stable across initialization', () => {
+  const origin = db.prepare('SELECT * FROM memory_origins WHERE memory_id=42').get();
+  assert.equal(origin.source, 'legacy-unknown');
+  assert.equal(origin.actor, 'unknown');
+  assert.match(origin.origin_id, /^[0-9a-f]{32}$/);
+  upgrade(db);
+  assert.equal(db.prepare('SELECT origin_id FROM memory_origins WHERE memory_id=42').get().origin_id, origin.origin_id);
+});
+check('history and origin relationships reject orphaned records', () => {
+  assert.throws(() => db.exec("INSERT INTO memory_origins VALUES(999,'abc','source','actor',1)"));
+  assert.throws(() => db.exec("INSERT INTO memory_events(memory_id,action,detail,recorded_at) VALUES(999,'add','bad',1)"));
+  assert.throws(() => db.exec("INSERT INTO memory_events(memory_id,action,detail,recorded_at) VALUES(42,'fabricated','bad',1)"));
 });
 console.log(`SQLite engine: ${db.prepare('SELECT sqlite_version() AS version').get().version}`);
 db.close();

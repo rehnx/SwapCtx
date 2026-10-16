@@ -2,9 +2,13 @@ param(
     [switch]$Offline,
     [switch]$ReleaseTests,
     [switch]$Benchmark,
+    [switch]$ContextTests,
+    [switch]$ModelTests,
+    [string]$CodexPath,
     [string]$CargoHome
 )
 $ErrorActionPreference = 'Stop'
+if ($ModelTests -and !$CodexPath) { throw 'ModelTests requires an explicit CodexPath and uses its configured model provider' }
 $taskProjectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $taskToolchainText = Get-Content -LiteralPath (Join-Path $taskProjectRoot 'rust-toolchain.toml') -Raw
 $taskVersion = [regex]::Match($taskToolchainText, 'channel\s*=\s*"([^"]+)"').Groups[1].Value
@@ -49,6 +53,27 @@ try {
     Invoke-TaskCargo (@('build') + $taskLocked + @('--release'))
     if ($ReleaseTests) { Invoke-TaskCargo (@('test') + $taskLocked + @('--release', '--all-targets')) }
     if ($Benchmark) { Invoke-TaskCargo (@('test') + $taskLocked + @('--release', '--test', 'cli', 'memory_performance_on_large_store', '--', '--ignored', '--nocapture')) }
+    if ($ContextTests -or $CodexPath) {
+        $taskNodeCommand = Get-Command node -ErrorAction SilentlyContinue
+        $taskNode = if ($taskNodeCommand) { $taskNodeCommand.Source } else { Join-Path $env:ProgramFiles 'nodejs/node.exe' }
+        if (!(Test-Path -LiteralPath $taskNode)) { throw 'Context tests require Node.js 24 or newer' }
+        & $taskNode scripts/check-sql.cjs
+        if ($LASTEXITCODE -ne 0) { throw 'SQL checks failed' }
+        & $taskNode scripts/check-context.cjs target/release/swapctx.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Context checks failed' }
+        & $taskNode scripts/check-session.cjs target/release/swapctx.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Session transport checks failed' }
+        if ($CodexPath) {
+            & $taskNode scripts/check-codex.cjs $CodexPath target/release/swapctx.exe
+            if ($LASTEXITCODE -ne 0) { throw 'Codex boundary checks failed' }
+            & $taskNode scripts/check-lifecycle.cjs $CodexPath target/release/swapctx.exe
+            if ($LASTEXITCODE -ne 0) { throw 'Codex lifecycle checks failed' }
+            if ($ModelTests) {
+                & $taskNode scripts/check-model-context.cjs $CodexPath target/release/swapctx.exe
+                if ($LASTEXITCODE -ne 0) { throw 'Real-provider context-use verification did not pass; inspect its structured report' }
+            }
+        }
+    }
 } finally {
     Pop-Location
 }

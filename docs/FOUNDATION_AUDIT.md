@@ -1,5 +1,7 @@
 ﻿# Phase 1 foundation audit and verification
 
+Historical Phase 1 baseline. The current implementation uses schema 3 and adds provenance, invalidation and guarded transfer/recovery; see [Phase 2 results](PHASE2_RELIABILITY.md) for current functionality and limitations. Statements below describe the earlier Phase 1 revision.
+
 Updated 2026-10-12. Scope: all supplied implementation, Rust modules, SQL schemas, tests, fixtures, verification scripts, and documentation. No separate specification, AGENTS.md, or Git history was found. The user's objectives govern this work. No agent integrations were added.
 
 ## Outcome

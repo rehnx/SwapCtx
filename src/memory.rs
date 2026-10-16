@@ -1,4 +1,4 @@
-use crate::{display::safe, escape_like, sensitive, storage, validate_text};
+use crate::{display::safe, escape_like, history, sensitive, storage, validate_text};
 use anyhow::{bail, Context, Result};
 use clap::Subcommand;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
@@ -17,6 +17,11 @@ pub enum Action {
         expires_in_days: Option<u32>,
         #[arg(long)]
         allow_sensitive: bool,
+        /// Self-reported origin label; not independently verified.
+        #[arg(long, default_value = "manual")]
+        source: String,
+        #[arg(long, default_value = "user")]
+        actor: String,
     },
     /// Literal substring search in active memories; stale entries remain visible.
     Search {
@@ -27,6 +32,13 @@ pub enum Action {
         include_inactive: bool,
         #[arg(long)]
         fresh_only: bool,
+        #[arg(long)]
+        kind: Option<String>,
+        #[arg(long)]
+        key: Option<String>,
+        /// Exclude records whose explicit key has competing valid active records.
+        #[arg(long)]
+        unconflicted: bool,
     },
     /// List newest active memories; optionally include archived/superseded history.
     Recent {
@@ -46,12 +58,22 @@ pub enum Action {
     },
     /// Retain a record in history while excluding it from default retrieval.
     Archive { id: i64 },
+    /// Mark knowledge invalid, preserving the record and a reason in history.
+    Invalidate {
+        id: i64,
+        #[arg(long)]
+        reason: String,
+    },
+    /// Show self-reported origin and retained local lifecycle history.
+    History { id: i64 },
     /// Atomically replace an active record, retaining the original and its link.
     Supersede {
         id: i64,
         text: String,
-        #[arg(long, value_parser = clap::value_parser!(u32).range(1..=3650))]
+        #[arg(long, conflicts_with = "clear_expiry", value_parser = clap::value_parser!(u32).range(1..=3650))]
         expires_in_days: Option<u32>,
+        #[arg(long)]
+        clear_expiry: bool,
         #[arg(long)]
         allow_sensitive: bool,
     },
@@ -69,7 +91,11 @@ impl Action {
     pub fn writable(&self) -> bool {
         matches!(
             self,
-            Self::Add { .. } | Self::Archive { .. } | Self::Supersede { .. } | Self::Review { .. }
+            Self::Add { .. }
+                | Self::Archive { .. }
+                | Self::Supersede { .. }
+                | Self::Review { .. }
+                | Self::Invalidate { .. }
         )
     }
 }
@@ -152,8 +178,14 @@ pub fn run(conn: &mut Connection, project: i64, action: Action) -> Result<()> {
             key,
             expires_in_days,
             allow_sensitive,
+            source,
+            actor,
         } => {
             check_input(&kind, &text, key.as_deref(), allow_sensitive)?;
+            for value in [&source, &actor] {
+                validate_text("Provenance label", value, 4096)?;
+                sensitive::guard(value, allow_sensitive)?;
+            }
             let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let id = insert(
                 &tx,
@@ -163,6 +195,13 @@ pub fn run(conn: &mut Connection, project: i64, action: Action) -> Result<()> {
                 key.as_deref(),
                 expiry(expires_in_days)?,
             )?;
+            history::origin(&tx, id, &source, &actor)?;
+            history::event(
+                &tx,
+                id,
+                "add",
+                "Explicitly saved by CLI; source and actor are self-reported",
+            )?;
             tx.commit()?;
             println!("Saved local memory record #{id}");
         }
@@ -170,10 +209,11 @@ pub fn run(conn: &mut Connection, project: i64, action: Action) -> Result<()> {
             id,
             text,
             expires_in_days,
+            clear_expiry,
             allow_sensitive,
         } => {
             let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            let (kind, key, _) = active(&tx, project, id)?;
+            let (kind, key, old_expiry) = active(&tx, project, id)?;
             check_input(&kind, &text, key.as_deref(), allow_sensitive)?;
             let replacement = insert(
                 &tx,
@@ -181,10 +221,32 @@ pub fn run(conn: &mut Connection, project: i64, action: Action) -> Result<()> {
                 &kind,
                 &text,
                 key.as_deref(),
-                expiry(expires_in_days)?,
+                if clear_expiry {
+                    None
+                } else if expires_in_days.is_some() {
+                    expiry(expires_in_days)?
+                } else {
+                    old_expiry
+                },
+            )?;
+            history::origin(&tx, replacement, "manual-supersession", "user")?;
+            history::event(
+                &tx,
+                replacement,
+                "add",
+                &format!("Replacement of origin {}", history::identifier(&tx, id)?),
             )?;
             tx.execute("INSERT INTO memory_metadata(memory_id,state,superseded_by) VALUES (?1,'superseded',?2)
                         ON CONFLICT(memory_id) DO UPDATE SET state='superseded', superseded_by=excluded.superseded_by", params![id,replacement])?;
+            history::event(
+                &tx,
+                id,
+                "supersede",
+                &format!(
+                    "Replaced by origin {}",
+                    history::identifier(&tx, replacement)?
+                ),
+            )?;
             tx.commit()?;
             println!("Superseded memory #{id} with #{replacement}; original content retained");
         }
@@ -195,6 +257,12 @@ pub fn run(conn: &mut Connection, project: i64, action: Action) -> Result<()> {
                 "INSERT INTO memory_metadata(memory_id,state) VALUES (?1,'archived')
                         ON CONFLICT(memory_id) DO UPDATE SET state='archived'",
                 [id],
+            )?;
+            history::event(
+                &tx,
+                id,
+                "archive",
+                "Excluded from default retrieval; content retained",
             )?;
             tx.commit()?;
             println!("Archived memory #{id}; content retained");
@@ -215,16 +283,37 @@ pub fn run(conn: &mut Connection, project: i64, action: Action) -> Result<()> {
             };
             tx.execute("INSERT INTO memory_metadata(memory_id,reviewed_at,expires_at) VALUES (?1,?2,?3)
                         ON CONFLICT(memory_id) DO UPDATE SET reviewed_at=excluded.reviewed_at,expires_at=excluded.expires_at", params![id,now()?,expires])?;
+            history::event(&tx,id,"review",&format!("Human review; expiry before={old_expiry:?} after={expires:?}; no correctness inferred"))?;
             tx.commit()?;
             println!("Recorded human review for memory #{id}; no factual correctness inferred");
+        }
+        Action::History { id } => history::show(conn, project, id)?,
+        Action::Invalidate { id, reason } => {
+            validate_text("Invalidation reason", &reason, 16384)?;
+            sensitive::guard(&reason, false)?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            active(&tx, project, id)?;
+            tx.execute("INSERT INTO memory_metadata(memory_id,validity,invalid_reason) VALUES(?1,'invalid',?2) ON CONFLICT(memory_id) DO UPDATE SET validity='invalid',invalid_reason=excluded.invalid_reason",params![id,reason])?;
+            history::event(&tx, id, "invalidate", &reason)?;
+            tx.commit()?;
+            println!("Invalidated memory #{id}; original data and reason retained");
         }
         Action::Search {
             query,
             limit,
             include_inactive,
             fresh_only,
+            kind,
+            key,
+            unconflicted,
         } => {
             validate_text("Search query", &query, 4096)?;
+            if let Some(value) = &kind {
+                validate_text("Kind filter", value, 128)?;
+            }
+            if let Some(value) = &key {
+                validate_text("Key filter", value, 128)?;
+            }
             retrieve(
                 conn,
                 project,
@@ -233,6 +322,9 @@ pub fn run(conn: &mut Connection, project: i64, action: Action) -> Result<()> {
                     limit,
                     include_inactive,
                     fresh_only,
+                    kind: kind.as_deref(),
+                    key: key.as_deref(),
+                    unconflicted,
                     ..Default::default()
                 },
             )?;
@@ -274,6 +366,9 @@ struct Retrieval<'a> {
     include_inactive: bool,
     fresh_only: bool,
     reveal: bool,
+    kind: Option<&'a str>,
+    key: Option<&'a str>,
+    unconflicted: bool,
 }
 
 // Legacy stores remain readable without a migration or write-capable connection.
@@ -285,8 +380,36 @@ fn retrieve(conn: &Connection, project: i64, filter: Retrieval<'_>) -> Result<()
         include_inactive,
         fresh_only,
         reveal,
+        kind: kind_filter,
+        key: key_filter,
+        unconflicted,
     } = filter;
     let modern = storage::version(conn)? >= 2;
+    let provenance = storage::version(conn)? >= 3;
+    let validity = if provenance {
+        "coalesce(d.validity,'valid'),d.invalid_reason"
+    } else {
+        "'valid',NULL"
+    };
+    let valid = if provenance && !include_inactive {
+        "AND coalesce(d.validity,'valid')='valid'"
+    } else {
+        ""
+    };
+    let key_clause = if modern {
+        "AND (?7 IS NULL OR d.memory_key=?7)"
+    } else {
+        "AND ?7 IS NULL"
+    };
+    let conflict_clause = if modern && unconflicted {
+        if provenance {
+            "AND (d.memory_key IS NULL OR d.memory_key NOT IN (SELECT c.memory_key FROM memory_metadata c JOIN memories cm ON cm.id=c.memory_id WHERE cm.project_id=?1 AND c.memory_key IS NOT NULL AND c.state='active' AND c.validity='valid' GROUP BY c.memory_key HAVING count(*)>1))"
+        } else {
+            "AND (d.memory_key IS NULL OR d.memory_key NOT IN (SELECT c.memory_key FROM memory_metadata c JOIN memories cm ON cm.id=c.memory_id WHERE cm.project_id=?1 AND c.memory_key IS NOT NULL AND c.state='active' GROUP BY c.memory_key HAVING count(*)>1))"
+        }
+    } else {
+        ""
+    };
     let metadata = if modern {
         "coalesce(d.state,'active'),d.memory_key,d.expires_at,d.reviewed_at,d.superseded_by"
     } else {
@@ -318,14 +441,23 @@ fn retrieve(conn: &Connection, project: i64, filter: Retrieval<'_>) -> Result<()
         "AND ?3 IS NULL"
     };
     let sql = format!(
-        "SELECT m.id,m.kind,m.content,m.created_at,{metadata} FROM memories m {join}
-        WHERE m.project_id=?1 {search} {record} {active} {fresh} ORDER BY m.id DESC LIMIT ?4"
+        "SELECT m.id,m.kind,m.content,m.created_at,{metadata},{validity} FROM memories m {join}
+        WHERE m.project_id=?1 {search} {record} {active} {fresh} {valid} AND (?6 IS NULL OR m.kind=?6) {key_clause} {conflict_clause} ORDER BY m.id DESC LIMIT ?4"
     );
     let like = query.map(|q| format!("%{}%", escape_like(q)));
     let timestamp = now()?;
     let mut stmt = conn.prepare(&sql)?;
-    let mut rows = stmt.query(params![project, like, id, limit, timestamp])?;
+    let mut rows = stmt.query(params![
+        project,
+        like,
+        id,
+        limit,
+        timestamp,
+        kind_filter,
+        key_filter
+    ])?;
     let mut count = 0;
+    let mut conflicts = std::collections::HashMap::new();
     while let Some(row) = rows.next()? {
         let record: i64 = row.get(0)?;
         let kind: String = row.get(1)?;
@@ -336,6 +468,8 @@ fn retrieve(conn: &Connection, project: i64, filter: Retrieval<'_>) -> Result<()
         let expires: Option<i64> = row.get(6)?;
         let reviewed: Option<i64> = row.get(7)?;
         let replacement: Option<i64> = row.get(8)?;
+        let validity: String = row.get(9)?;
+        let invalid_reason: Option<String> = row.get(10)?;
         let stale = expires.is_some_and(|e| e <= timestamp);
         println!(
             "#{record} [{}] {} state={}{}",
@@ -344,13 +478,27 @@ fn retrieve(conn: &Connection, project: i64, filter: Retrieval<'_>) -> Result<()
             safe(&state),
             if stale { " STALE" } else { "" }
         );
+        if validity == "invalid" {
+            println!(
+                "  INVALID: {}",
+                sensitive::display(
+                    invalid_reason.as_deref().unwrap_or("unknown reason"),
+                    reveal
+                )
+            );
+        }
         if let Some(key) = key {
-            let competing: i64 = conn.query_row(
-                "SELECT count(*) FROM memory_metadata d JOIN memories m ON m.id=d.memory_id
-                WHERE m.project_id=?1 AND d.memory_key=?2 AND d.state='active'",
+            let competing: i64 = if let Some(count) = conflicts.get(&key) {
+                *count
+            } else {
+                let count=conn.query_row(
+                if provenance { "SELECT count(*) FROM memory_metadata d JOIN memories m ON m.id=d.memory_id WHERE m.project_id=?1 AND d.memory_key=?2 AND d.state='active' AND d.validity='valid'" } else { "SELECT count(*) FROM memory_metadata d JOIN memories m ON m.id=d.memory_id WHERE m.project_id=?1 AND d.memory_key=?2 AND d.state='active'" },
                 params![project, key],
                 |r| r.get(0),
             )?;
+                conflicts.insert(key.clone(), count);
+                count
+            };
             println!(
                 "  key={}{}",
                 sensitive::display(&key, reveal),
@@ -366,6 +514,9 @@ fn retrieve(conn: &Connection, project: i64, filter: Retrieval<'_>) -> Result<()
         }
         println!("  {}", sensitive::display(&content, reveal));
         count += 1;
+    }
+    if let Some(id) = id.filter(|_| count > 0) {
+        history::show(conn, project, id)?;
     }
     if count == 0 {
         if id.is_some() {

@@ -2,11 +2,11 @@
 
 Local-first external context records and manual project boundary checks. Rust CLI, SQLite storage, Windows first.
 
-SwapCtx preserves requirements, decisions, notes, and rules that you explicitly save. It does **not** expand native model context, inspect hidden model state, integrate with agents, or intercept their actions. A check is an observation at a point in time, not enforcement or authorization.
+SwapCtx preserves requirements, decisions, notes, and rules that you explicitly save. It provides versioned JSON context, an optional managed Codex console, and a context-first exec launcher. It does **not** expand native model context, inspect hidden model state, or intercept agent actions. A check is an observation at a point in time, not enforcement or authorization.
 
 ## Foundation status
 
-Native Windows formatting, Clippy, debug/release builds, 36 functional tests, and a 100,000-record benchmark passed. Rust and dependencies are pinned. Linux execution and the automated dependency advisory scan remain unverified. See [the foundation audit](docs/FOUNDATION_AUDIT.md) for evidence and remaining release gates.
+Phase 3 adds a managed Codex console with verified startup, resume and compaction context transport through the actual Codex runtime and a synthetic local provider. **Real-model context use remains unverified because authentication is unavailable.** Native TUI hook delivery remains unverified. See [Phase 3 usage, evidence and limits](docs/PHASE3_CODEX_LIFECYCLE.md). [Context protocol v1](docs/CONTEXT_PROTOCOL.md), [the earlier readiness milestone](docs/CODEX_READINESS.md), [Phase 2 verification](docs/PHASE2_RELIABILITY.md) and [the Phase 1 audit](docs/FOUNDATION_AUDIT.md) document the foundation. Schema 3 and dependencies remain unchanged. Linux execution and automated dependency advisory scanning remain unverified.
 
 ## Build and verify
 
@@ -31,7 +31,26 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify.ps1 -Re
 
 The execution-policy argument applies only to that process. The benchmark is optional and ignored during ordinary tests. Windows/Linux CI and an online `cargo audit` job are supplied but have not run here. Publish the source folder at repository root so GitHub discovers `.github/workflows/ci.yml`.
 
-Optional Node.js 24 schema checks: `node scripts/check-sql.cjs`. These eight supplemental checks do not replace native tests. Node is not a runtime dependency.
+Optional Node.js 24 contract checks: `node scripts/check-sql.cjs`, `node scripts/check-context.cjs target/release/swapctx.exe` and `node scripts/check-session.cjs target/release/swapctx.exe`, or add `-ContextTests` to verification. Add `-CodexPath 'C:\absolute\codex.exe'` for the isolated loopback Codex 0.162.1 acceptance suites. `-ModelTests` additionally opts into the separate real-provider context-use evaluation using generated probe data and Codex's configured authentication. These checks supplement native tests. Node is only a runtime dependency of the optional Codex adapters; ordinary Rust memory commands remain standalone.
+
+## Machine context and Codex handoff
+
+```powershell
+& 'C:\path\to\swapctx.exe' --data-dir 'C:\path\to\data' context `
+  --protocol-version 1 --query 'architecture authentication' --max-bytes 8192
+```
+
+Context packets prioritize requirements, report self-reported origins, omit invalid/stale/conflicting/secret-like records by default, and expose missing mandatory coverage. Byte budgets include the complete output, rather than estimating model tokens. Existing human-readable search semantics are preserved. See the [protocol](docs/CONTEXT_PROTOCOL.md) and [opt-in launcher usage](docs/CODEX_READINESS.md#explicit-launcher-use). No hooks are automatically installed. Using the launcher forwards selected context to your configured Codex provider; retrieval itself stays local.
+
+For the managed console, from a registered project or a nested directory:
+
+```powershell
+& 'C:\path\to\swapctx.exe' codex setup --codex 'C:\absolute\path\to\codex.exe'
+& 'C:\path\to\swapctx.exe' codex doctor
+& 'C:\path\to\swapctx.exe' codex run
+```
+
+This optional console requires Node 24+ and Codex 0.162.1. It resumes the project's saved managed thread and refreshes selected context before each turn. Use `/context`, `/query WORDS`, `/compact`, `/new` and `/exit`; `run --new` starts another thread while preserving the previous reference. Read-only is the default. Setup leaves native Codex configuration and hooks unchanged. Ordinary `codex` launches do not activate this integration. See [managed console details](docs/PHASE3_CODEX_LIFECYCLE.md) before enabling workspace writes.
 
 ## Use
 
@@ -44,6 +63,7 @@ Set-Location 'C:\path\to\your-project'
 & $SwapCtx memory search 'authentication'
 & $SwapCtx memory recent --limit 10
 & $SwapCtx memory get 1
+& $SwapCtx memory history 1
 & $SwapCtx memory supersede 1 'Preserve authentication and session expiry behavior'
 & $SwapCtx memory recent --include-inactive
 & $SwapCtx memory review 2 --expires-in-days 60
@@ -54,6 +74,11 @@ Set-Location 'C:\path\to\your-project'
 & $SwapCtx status
 & $SwapCtx doctor
 & $SwapCtx backup 'C:\path\to\backup\swapctx-snapshot.db'
+& $SwapCtx export 'C:\path\to\backup\project-context.db'
+# From the destination registered project:
+& $SwapCtx import 'C:\path\to\backup\project-context.db'
+& $SwapCtx import 'C:\path\to\backup\project-context.db' --apply
+& $SwapCtx --data-dir 'C:\path\to\NEW-recovery-data' restore 'C:\path\to\backup\swapctx-snapshot.db'
 & $SwapCtx capabilities
 & $SwapCtx privacy
 ```
@@ -66,8 +91,10 @@ Global `--data-dir 'C:\path\to\local-data'` selects an independent store. Relati
 
 - Search is literal substring matching against content and kind with ASCII-insensitive SQLite LIKE. Percent, underscore, and backslash are literal. Unicode is preserved; Unicode case folding, semantic ranking, embeddings, and full-text indexing are absent.
 - Search/recent return newest records first, limits 1–100. Recent uses the project index; substring searches can scan history. Get uses a project-scoped record ID.
-- Default retrieval includes active records. `--include-inactive` includes archived/superseded history. `archive` retains data; `supersede` atomically creates a replacement and links the retained original.
-- Multiple active records with an identical explicit `--key` display CONFLICT. This does not infer semantic contradictions or decide which statement is correct.
+- Default retrieval includes valid active records. `--include-inactive` includes invalid/archived/superseded history. `archive` retains data; `supersede` atomically creates a replacement and links the retained original. Supersession preserves expiry unless `--expires-in-days` or `--clear-expiry` explicitly changes it.
+- `memory invalidate ID --reason 'Evidence contradicts this statement'` retains invalid knowledge and its reason but excludes it from default retrieval. Review records a review event and does not undo invalidation; save a corrected replacement through supersession.
+- `memory add --source 'requirements.md:section-4' --actor 'maintainer' TEXT` records self-reported origin labels (defaults manual/user). Stable origin IDs survive transfers. `memory history ID` shows retained lifecycle events. Legacy records explicitly have unknown origins/prior history. No claim is made that labels are authenticated or history tamper-proof.
+- Multiple valid active records with an identical explicit key display CONFLICT. This does not infer semantic contradictions or choose a correct statement. Search supports exact `--kind` and `--key` filters; `--unconflicted` excludes competing keys. Stale valid active records still count as competing knowledge. Conflict exclusion aggregates keys once instead of recounting each candidate.
 - Expired records display stale and remain visible, including requirements. `--fresh-only` deliberately filters them. `review` records human review; without expiry flags it preserves existing expiry. Use `--expires-in-days` to renew or `--clear-expiry` to remove expiry. The local clock and review timestamps do not prove correctness.
 - Potential secrets are rejected on new memory/rule writes unless `--allow-sensitive` is explicit. Known secret-like values are hidden in ordinary output; `memory get ID --reveal` explicitly displays them. Detection has false positives/negatives and is neither comprehensive redaction nor encryption.
 - UTF-8 byte bounds: kind/key 128, content 1 MiB, pattern 4 KiB, reason 16 KiB, query 4 KiB. Empty values and NUL fail. Windows command-line limits may be smaller. Existing records are not rewritten or truncated.
@@ -88,16 +115,24 @@ Exit codes: 0 success or audit-only/no-match; 1 operational/validation/database 
 
 ## Storage, migration, recovery
 
-Only init creates a database. Original unversioned and version-1 databases remain readable without modification. Recognized older schemas upgrade transactionally to v2 on init or a write command. Additive migration preserves original IDs, content, timestamps, and indexes; absent metadata means active memory and deny policy. Reads are read-only; other writes open existing databases only.
+Only init creates the ordinary working database. Restore creates an explicitly selected new store; export creates a separate bundle. V0/v1/v2 stores remain readable without modification. Recognized older schemas upgrade transactionally to v3 on init or a write command. Migration preserves original IDs, content, timestamps, indexes, and lifecycle metadata; it registers unknown origins instead of inventing earlier history. Reads are read-only; ordinary writes open existing stores only.
+
+Before an upgrade, use backup to retain a pre-migration snapshot. Older SwapCtx binaries reject schema 3; migration is backward compatible with existing data, not a supported downgrade. The new binary can back up a legacy store without migrating it.
 
 Unknown, incomplete, foreign, future schemas and unexpected triggers/views fail without resetting stores. Ambiguous legacy ASCII case aliases for Windows projects fail without deleting registrations. Schema checks are not a full content audit; doctor checks integrity, foreign keys, and lifecycle links without repair. Foreign keys and a five-second busy timeout are explicit. SQLite default journal/durability settings remain; existing WAL stores are supported without forcing a journal-mode change.
 
 `backup DESTINATION` creates a consistent **whole-store plaintext** snapshot through SQLite's online backup API, verifies integrity/relationships, flushes, and publishes without overwriting a file. The parent directory must exist. Committed WAL changes are included; uncommitted changes are excluded. Failed staging is cleaned up. A ten-second retry deadline can fail under contention. This is not encryption or a hardware power-loss guarantee.
 
-Restore into a separate local directory by copying a verified snapshot as `swapctx.db`, then run `--data-dir 'C:\absolute\restore-data' doctor` and inspect records. This workflow was tested. No automatic restore/merge command exists. Close database users before replacing an existing store and preserve its entire data directory including journal/WAL/SHM sidecars. Never delete sidecars as repair. Init is not corruption recovery.
+`--data-dir 'C:\absolute\NEW-directory' restore SNAPSHOT` validates before creating a new directory, then makes a verified online snapshot into it. The parent must exist; any existing directory is refused, including empty ones. Default storage cannot be a restore target. No working store is replaced or merged. Interruption/failure may leave the new directory or temporary staging files; inspect them and choose a different new directory for retry. Doctor checks the restored store. Close database users before manually replacing an existing store; preserve its whole directory including journal/WAL/SHM sidecars. Never delete sidecars as repair. Init is not corruption recovery.
+
+`export FILE` creates a fresh, schema-3 SQLite bundle containing only the selected project, its rules, all memory/history, and original project path. It never copies unrelated projects or their freed database pages. Run init on legacy stores first to establish stable origins. Existing export files are refused. Bundles are plaintext, include potentially sensitive saved history and provenance, and are not signed.
+
+`import FILE` previews without writes/migration. `--apply` merges atomically into the current registered project, remapping local IDs and supersession links. Stable origins deduplicate identical copies; divergent content, lifecycle metadata or non-import history refuses the entire merge, as does an origin owned by another local project. No conflict is silently resolved. Existing rules are retained; identical rules skip. Repeated import adds no duplicate history. Inputs must contain exactly one project, pass schema/integrity/FK/history checks and input/secret guards. `--allow-sensitive` explicitly permits secret-like values. No SQL dumps are executed. Apply may first migrate a recognized legacy destination through the normal write-open path.
+
+Transfer limits: 256 MiB input file, 100,000 rows and 64 MiB decoded values per table. Larger stores can use whole-store backup/restore. These are practical bounds, not a sandbox against every malicious SQLite file. Connections disable trusted schemas and enable SQLite defensive mode. There is no repair command for corrupt snapshots or automatic divergence resolver.
 
 ## Privacy and next work
 
-Storage/backup is plaintext and inherits local permissions. No secure ACL provisioning, tamper resistance, credential discovery, project scanning, automatic history ingestion, AI calls, or uploads exist. External agents retain their own network behavior. Requirements influence agents only when supplied by a person or a future verified adapter.
+Storage/backup is plaintext and inherits local permissions. No secure ACL provisioning, tamper resistance, credential discovery, project scanning or automatic history ingestion exists. The Rust CLI has no AI/network client. Optional Codex adapters supply external records to Codex; Codex retains its own network/logging behavior. Delivery does not guarantee requirements will be followed. Memory backup/export does not include Codex adapter settings/session references or native Codex conversation history.
 
-Complete online advisory audit and cross-platform CI before production release clearance. Phase 2 should strengthen portable recovery, provenance, and measured retrieval quality through failure injection and a versioned interchange contract. Major agent integrations remain deferred until their real capabilities and interception limits are verified.
+Complete online advisory audit and cross-platform CI before production release clearance. The managed console is ready for an opt-in pilot on the tested versions; authenticated model-use and ordinary editing workflows still need verification. Native TUI lifecycle delivery and tool protection remain unverified. See the [Phase 3 readiness decision](docs/PHASE3_CODEX_LIFECYCLE.md#readiness-decision).
