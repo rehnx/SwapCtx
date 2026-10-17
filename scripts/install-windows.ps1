@@ -6,6 +6,43 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+# Resolve an existing directory by handle, including Windows 8.3 aliases and
+# junctions. Keep all new children in one canonical namespace before comparing.
+if (-not ('SwapCtx.ReleaseDirectoryPaths' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Text;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+namespace SwapCtx {
+    public static class ReleaseDirectoryPaths {
+        [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+        private static extern SafeFileHandle CreateFile(string path, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
+        [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+        private static extern uint GetFinalPathNameByHandle(SafeFileHandle file, StringBuilder path, uint length, uint flags);
+        public static string Resolve(string path) {
+            using (SafeFileHandle file = CreateFile(Path.GetFullPath(path), 0, 7, IntPtr.Zero, 3, 0x02000000, IntPtr.Zero)) {
+                if (file.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot open release directory");
+                StringBuilder text = new StringBuilder(32768);
+                uint length = GetFinalPathNameByHandle(file, text, (uint)text.Capacity, 0);
+                if (length == 0) throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot resolve release directory");
+                if (length >= text.Capacity) throw new IOException("Resolved release path is too long");
+                string result = text.ToString();
+                if (result.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase)) return @"\\" + result.Substring(8);
+                if (result.StartsWith(@"\\?\", StringComparison.Ordinal) && result.Length > 6 &&
+                    Char.IsLetter(result[4]) && result[5] == ':' && result[6] == '\\') return result.Substring(4);
+                throw new IOException("Unsupported release directory namespace");
+            }
+        }
+    }
+}
+'@
+}
+function Resolve-ReleaseDirectory([string]$Path) {
+    return [SwapCtx.ReleaseDirectoryPaths]::Resolve($Path)
+}
 if ($env:OS -ne 'Windows_NT') { throw 'Windows installation requires Windows' }
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -13,6 +50,8 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $taskOutput = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Destination)
 $taskParent = [IO.Path]::GetDirectoryName($taskOutput)
 if (!(Test-Path -LiteralPath $taskParent -PathType Container)) { throw 'Destination parent must exist' }
+$taskParent = Resolve-ReleaseDirectory $taskParent
+$taskOutput = [IO.Path]::Combine($taskParent,[IO.Path]::GetFileName($taskOutput))
 if (Get-Item -LiteralPath $taskOutput -Force -ErrorAction SilentlyContinue) { throw 'Destination exists; choose a new installation directory' }
 $taskInput = Get-Item -LiteralPath $Archive -Force
 if ($taskInput.PSIsContainer -or ($taskInput.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $taskInput.Length -gt 64MB) { throw 'Archive must be a regular file no larger than 64 MiB' }
@@ -80,6 +119,7 @@ try {
 } finally {
     if (Test-Path -LiteralPath $taskStage) {
         if ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($taskStage)) -ne $taskParent) { throw 'Refusing cleanup outside staging parent' }
+        if ((Get-Item -LiteralPath $taskStage -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Refusing cleanup of redirected staging directory' }
         Remove-Item -LiteralPath $taskStage -Recurse -Force
     }
 }

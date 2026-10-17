@@ -6,6 +6,11 @@ SwapCtx preserves requirements, decisions, notes, and rules that you explicitly 
 
 ## Foundation status
 
+The [Phase 7B Windows CI fix](docs/PHASE7B_WINDOWS_CI_FIX.md) addresses the hosted
+staging-path alias failure and misleading cascading ZIP errors. Containment and
+integrity checks are retained; the fix is offline-verified and awaits a hosted
+rerun on the patched commit.
+
 [Phase 6 release preparation](docs/PHASE6_RELEASE_APPROVAL.md) now provides one
 offline producer command and a PowerShell-only recipient acceptance script.
 Receipt-backed packaging independently checks the actual executable imports,

@@ -1,0 +1,58 @@
+{
+  "date": "2026-10-18",
+  "scope": "Windows hosted package failure investigation and deterministic offline fix verification",
+  "hosted_evidence_read_only": {
+    "run_url": "https://github.com/rehnx/SwapCtx/actions/runs/39061820171",
+    "job_id": 117481170268,
+    "commit": "640d296670e3ea1c3083f321a80460a24b7fbf8a",
+    "image": "windows-2025-vs2026",
+    "first_failing_test": "portable package contains only the allowlisted payload and correct hashes",
+    "first_reported_error": "Refusing cleanup outside staging parent",
+    "old_line": "scripts/package-windows.ps1:116",
+    "later_errors": "ENOENT for unpublished ZIP and absent extracted fixture",
+    "limitation": "Finally replaced the earlier in-body exception; its exact message cannot be recovered from the retained log"
+  },
+  "cause": "Mixed normalized and unnormalized Windows 8.3/long parent spellings in staging containment comparisons; failed fixture setup did not prevent dependent tests",
+  "fix": [
+    "Resolve existing parents by Windows directory handle before deriving new output and staging paths",
+    "Retain containment checks and reject reparse-point directories before recursive cleanup",
+    "Retain primary package exception if cleanup also fails",
+    "Fail fixture setup once before registering dependent tests",
+    "Report process exit/signal/launch errors, arguments and captured stdout/stderr",
+    "Create disposable acceptance parent explicitly on fresh checkouts"
+  ],
+  "verification": {
+    "full_command": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/verify.ps1 -DeterministicOnly -ReleaseTests",
+    "full_exit_code": 0,
+    "log": ".build/phase7b-foundation.log",
+    "fmt_clippy_release_build": "passed",
+    "native_debug": 47,
+    "native_release": 47,
+    "ignored_benchmark": "not run",
+    "supplemental": {"schema": 10, "context": 23, "session_transport": 23, "everyday": 27, "package": 17, "pe_command_discovery": 4, "pilot_oracle_fixtures_only": 12},
+    "third_party_notice_regeneration": "passed",
+    "static_receipt_command": "node scripts/check-build-receipt.cjs .build/phase6-release/swapctx.exe .build/phase6-release/build-info.json",
+    "static_receipt_exit_code": 0,
+    "static_receipt_cases": 7,
+    "final_package_recheck": {"command": "node scripts/check-package.cjs target/release/swapctx.exe", "exit_code": 0, "passed": 17, "failed": 0, "log": ".build/phase7b-package-final.log"},
+    "new_cases": [
+      "Actual 8.3/long directory spellings resolve to the same handle-derived name",
+      "Short-name packaging and installation, alternate-spelling overwrite refusal, no staging leftovers",
+      "Failed setup produces one originating failure and no cascading ENOENT ZIP reads",
+      "Injected cleanup parent mismatch retains the primary error and refuses deletion",
+      "Injected staging junction retains the primary error and preserves outside sentinel"
+    ],
+    "recipient_acceptance": "Existing 16-check PowerShell-only acceptance passed within package suite"
+  },
+  "limits": [
+    "Local normalizer does not reproduce the hosted mode end-to-end; mixed-alias directory identity and guard regression exercised explicitly",
+    "First enumeration-based normalization attempt hit restricted ancestor ACLs; final handle-based implementation passed without expanded permissions",
+    "Patched workflow not pushed, dispatched or rerun",
+    "Clean-machine, advisory, redistribution and other public-release approval gates remain unchanged"
+  ],
+  "codex_inference_calls": 0,
+  "ai_agent_evaluations": 0,
+  "soak_evaluations": 0,
+  "remote_mutations": 0,
+  "user_data_modified": false
+}

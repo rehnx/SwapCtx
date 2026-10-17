@@ -18,11 +18,19 @@ const destination = path.join(root,'candidate with spaces');
 const extracted = path.join(root,'extracted with spaces');
 const archiveName = `swapctx-${version}-windows-x64.zip`;
 const hash = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+function diagnostic(result, phase) {
+  return `${phase}: status=${result.status}, signal=${result.signal || 'none'}, error=${result.error?.code || 'none'} ${result.error?.message || ''}\ncommand: ${JSON.stringify(result.command || result.error?.spawnargs || [])}\nstdout:\n${result.stdout || ''}\nstderr:\n${result.stderr || ''}`;
+}
 function ps(args) {
-  return spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',...args], {encoding:'utf8',timeout:60000});
+  const command = ['powershell.exe','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',...args];
+  const result = spawnSync(command[0],command.slice(1),{encoding:'utf8',timeout:60000});
+  result.command = command;
+  assert.ifError(result.error && new Error(diagnostic(result,'PowerShell launch failure')));
+  assert.equal(result.signal,null,diagnostic(result,'PowerShell interrupted'));
+  return result;
 }
 function pack(dest, input = binary) { return ps(['-File',script,'-Destination',dest,'-Binary',input]); }
-function ok(result) { assert.equal(result.status,0,result.stdout+result.stderr); return result.stdout; }
+function ok(result, phase = 'command') { assert.equal(result.status,0,diagnostic(result,phase)); return result.stdout; }
 function install(archive, destination, expected = hash(archive)) {return ps(['-File',installer,'-Archive',archive,'-ExpectedSha256',expected,'-Destination',destination]);}
 function modifiedArchive(label, change) {
   const dir = path.join(root,label+' payload'), archive = path.join(root,label+'.zip');
@@ -33,14 +41,18 @@ function modifiedArchive(label, change) {
   ok(ps(['-File',script,'-Source',dir,'-Archive',archive]));
   return archive;
 }
-test('portable package contains only the allowlisted payload and correct hashes', () => {
-  ok(pack(destination));
-  assert.deepEqual(fs.readdirSync(destination).sort(), ['SHA256SUMS.txt','install-windows.ps1','test-windows-preview.ps1',archiveName].sort());
-  assert.equal(fs.readFileSync(path.join(destination,'SHA256SUMS.txt'),'utf8'), `${hash(path.join(destination,archiveName))}  ${archiveName}\n${hash(path.join(destination,'install-windows.ps1'))}  install-windows.ps1\n${hash(path.join(destination,'test-windows-preview.ps1'))}  test-windows-preview.ps1\n`);
-  // Paths passed as parameters, never interpolated into executable shell text.
+function setupFixture() {
+  fs.mkdirSync(path.resolve(__dirname,'../.build'),{recursive:true});
+  ok(pack(destination),'initial packaging');
+  assert.ok(fs.existsSync(path.join(destination,archiveName)),`Initial packaging returned success without ${archiveName}`);
   const expand = path.join(root,'expand.ps1');
   fs.writeFileSync(expand, "param([string]$Archive,[string]$Destination)\n$ErrorActionPreference='Stop'\nAdd-Type -AssemblyName System.IO.Compression.FileSystem\n[IO.Compression.ZipFile]::ExtractToDirectory($Archive,$Destination)\n");
-  ok(ps(['-File',expand,'-Archive',path.join(destination,archiveName),'-Destination',extracted]));
+  ok(ps(['-File',expand,'-Archive',path.join(destination,archiveName),'-Destination',extracted]),'initial extraction');
+}
+function registerPackageTests() {
+test('portable package contains only the allowlisted payload and correct hashes', () => {
+  assert.deepEqual(fs.readdirSync(destination).sort(), ['SHA256SUMS.txt','install-windows.ps1','test-windows-preview.ps1',archiveName].sort());
+  assert.equal(fs.readFileSync(path.join(destination,'SHA256SUMS.txt'),'utf8'), `${hash(path.join(destination,archiveName))}  ${archiveName}\n${hash(path.join(destination,'install-windows.ps1'))}  install-windows.ps1\n${hash(path.join(destination,'test-windows-preview.ps1'))}  test-windows-preview.ps1\n`);
   assert.deepEqual(fs.readdirSync(extracted).sort(), ['Cargo.lock','DEPENDENCIES.md','LICENSE','QUICKSTART.md','manifest.json','swapctx.exe','THIRD_PARTY_NOTICES.txt','third-party-inventory.json'].sort());
   const manifest = JSON.parse(fs.readFileSync(path.join(extracted,'manifest.json'),'utf8'));
   assert.equal(manifest.format_version,1);
@@ -210,3 +222,63 @@ test('acceptance refuses untrusted installer bytes and preserves prior reports',
   assert.deepEqual(evidence.checks,['archive_hash']);assert.equal(fs.existsSync(work),false);
   const before = hash(report);assert.notEqual(ps(args).status,0);assert.equal(hash(report),before);
 });
+test('short and long Windows parent spellings resolve to the same directory',t=> {
+  const fixture = path.join(root,'alias-check.ps1');
+  const source = fs.readFileSync(script,'utf8');
+  const definition = source.match(/Add-Type -TypeDefinition @'\r?\n([\s\S]*?)\r?\n'@/)[1];
+  fs.writeFileSync(fixture,"param([string]$Directory)\n$ErrorActionPreference='Stop'\nAdd-Type -TypeDefinition @'\n"+definition+"\n'@\n$short=(New-Object -ComObject Scripting.FileSystemObject).GetFolder($Directory).ShortPath\n$long=[SwapCtx.ReleaseDirectoryPaths]::Resolve($Directory)\n[pscustomobject]@{short=$short;long=$long;resolvedShort=[SwapCtx.ReleaseDirectoryPaths]::Resolve($short);resolvedLong=[SwapCtx.ReleaseDirectoryPaths]::Resolve($long);oldMixedParentComparison=([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath([IO.Path]::Combine($long,'child'))) -eq $short)} | ConvertTo-Json -Compress\n");
+  const aliases = JSON.parse(ok(ps(['-File',fixture,'-Directory',root]),'Windows alias resolution'));
+  assert.equal(aliases.resolvedShort.toLowerCase(),aliases.resolvedLong.toLowerCase());
+  assert.equal(aliases.resolvedLong.toLowerCase(),fs.realpathSync.native(root).toLowerCase());
+  if (aliases.short.toLowerCase() === aliases.long.toLowerCase()) {t.diagnostic('Filesystem exposes no differing 8.3 alias; canonical resolution still checked');return;}
+  assert.equal(aliases.oldMixedParentComparison,false,'the previous mixed-spelling comparison rejects the same directory');
+  const output = path.join(aliases.short,'alias candidate');ok(pack(output),'packaging through short alias');
+  const zip = path.join(output,archiveName);assert.ok(fs.existsSync(zip));
+  // Alternate spelling must still be recognized as an existing destination.
+  const before = hash(zip);const result = pack(path.join(aliases.long,'alias candidate'));
+  assert.notEqual(result.status,0);assert.match(result.stdout+result.stderr,/Destination already exists/);assert.equal(hash(zip),before);
+  const installed = path.join(aliases.short,'alias install');ok(install(zip,installed),'installation through short alias');
+  assert.equal(hash(path.join(installed,'swapctx.exe')),hash(binary));
+  assert.equal(fs.readdirSync(root).some(name=>name.startsWith('.swapctx-package-')||name.startsWith('.swapctx-install-')),false);
+});
+test('failed fixture setup reports the first PowerShell error without cascading ZIP errors',()=> {
+  const missing = path.join(root,'MISSING-RELEASE.exe');
+  const result = spawnSync(process.execPath,[__filename,missing],{encoding:'utf8',timeout:30000,maxBuffer:1024*1024});
+  assert.equal(result.status,1,result.stdout+result.stderr);
+  const output = result.stdout+result.stderr;
+  assert.match(output,/package fixture setup failed/);assert.match(output,/initial packaging: status=1/);
+  assert.match(output,/MISSING-RELEASE\.exe/);assert.match(output,/stderr:/);
+  assert.doesNotMatch(output,/ENOENT:.*(?:\.zip|extracted with spaces)/);
+  assert.match(output,/tests 1(?:\r?\n|$)/);
+});
+test('cleanup guards preserve the primary error and refuse redirected staging',()=> {
+  for (const mode of ['parent mismatch','junction']) {
+    const source = path.join(root,'cleanup '+mode);fs.mkdirSync(path.join(source,'scripts'),{recursive:true});fs.mkdirSync(path.join(source,'docs'));
+    for (const name of ['Cargo.toml','Cargo.lock','LICENSE','THIRD_PARTY_NOTICES.txt']) fs.copyFileSync(path.join(__dirname,'..',name),path.join(source,name));
+    for (const name of ['WINDOWS_RELEASE.md','DEPENDENCIES.md','third-party-inventory.json']) fs.copyFileSync(path.join(__dirname,'../docs',name),path.join(source,'docs',name));
+    const outside = path.join(source,'outside');fs.mkdirSync(outside);fs.writeFileSync(path.join(outside,'keep.txt'),'preserve');
+    const injection = mode === 'junction'
+      ? "[IO.Directory]::Move($taskStage,$taskStage+'-saved')\n[void](New-Item -ItemType Junction -Path $taskStage -Target (Join-Path $taskRoot 'outside'))"
+      : "$taskParent = Join-Path $taskParent 'wrong-parent'";
+    const original = fs.readFileSync(script,'utf8');
+    const marker = "[void][IO.Directory]::CreateDirectory($taskPayload)";
+    assert.ok(original.includes(marker),'fault injection location must remain explicit');
+    fs.writeFileSync(path.join(source,'scripts/package-windows.ps1'),original.replace(marker,marker+'\n'+injection+"\nthrow 'PRIMARY_PACKAGE_FAILURE'"));
+    const output = path.join(source,'candidate');
+    const result = ps(['-File',path.join(source,'scripts/package-windows.ps1'),'-Destination',output,'-Binary',binary]);
+    assert.notEqual(result.status,0);
+    assert.match(result.stderr,/PRIMARY_PACKAGE_FAILURE/);
+    assert.match(result.stderr,/Additional cleanup failure \(original error retained\)/);
+    assert.match(result.stderr,mode === 'junction' ? /Refusing cleanup of redirected staging/ : /Refusing cleanup outside staging parent/);
+    assert.equal(fs.existsSync(output),false);assert.equal(fs.readFileSync(path.join(outside,'keep.txt'),'utf8'),'preserve');
+  }
+});
+}
+// Setup is a prerequisite, not an ordinary test that later tests can ignore.
+// A failure registers one originating error and no dependent filesystem checks.
+try {
+  setupFixture();
+  registerPackageTests();
+} catch (error) {
+  test('package fixture setup failed',()=>{throw error;});
+}
