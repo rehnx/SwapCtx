@@ -71,6 +71,7 @@ $taskInput = Get-Item -LiteralPath $Archive -Force
 if ($taskInput.PSIsContainer -or ($taskInput.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $taskInput.Length -gt 64MB) { throw 'Archive must be a regular file no larger than 64 MiB' }
 $taskStage = Join-Path $taskParent ('.swapctx-install-' + [guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($taskStage)
+$taskFailure = $null
 try {
     $taskSnapshot = Join-Path $taskStage 'input.zip'
     [IO.File]::Copy($taskInput.FullName, $taskSnapshot, $false)
