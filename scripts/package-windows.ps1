@@ -146,7 +146,7 @@ try {
     if ($BuildInfo) { $taskChecksums += (Get-FileHash -LiteralPath $taskReceiptPath -Algorithm SHA256).Hash.ToLowerInvariant() + "  build-info.json`n" }
     [IO.File]::WriteAllText((Join-Path $taskStage 'SHA256SUMS.txt'), $taskChecksums, [Text.UTF8Encoding]::new($false))
     # Delete only our known staging child; publish both outputs in one directory rename.
-    if ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($taskPayload)) -ne $taskStage) { throw 'Refusing cleanup outside staging directory' }
+    if ((Resolve-ReleaseDirectory ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($taskPayload))) -ne (Resolve-ReleaseDirectory $taskStage))) { throw 'Refusing cleanup outside staging directory' }
     if ((Get-Item -LiteralPath $taskPayload -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Refusing cleanup of redirected payload directory' }
     Remove-Item -LiteralPath $taskPayload -Recurse -Force
     [IO.Directory]::Move($taskStage, $taskOutput)
@@ -158,7 +158,7 @@ try {
 } finally {
     try {
         if (Test-Path -LiteralPath $taskStage) {
-            $taskActualParent = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($taskStage))
+            $taskActualParent = Resolve-ReleaseDirectory ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($taskStage)))
             if ($taskActualParent -ne $taskParent) { throw "Refusing cleanup outside staging parent: actual '$taskActualParent', expected '$taskParent'" }
             if ((Get-Item -LiteralPath $taskStage -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Refusing cleanup of redirected staging directory' }
             Remove-Item -LiteralPath $taskStage -Recurse -Force

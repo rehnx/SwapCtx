@@ -110,7 +110,7 @@ try {
     $env:PATH = $taskOriginalPath
     Pop-Location
     if (Test-Path -LiteralPath $taskStage) {
-        if ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($taskStage)) -ne $taskParent) { throw 'Refusing cleanup outside staging parent' }
+        if ((Resolve-ReleaseDirectory ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($taskStage))) -ne $taskParent)) { throw 'Refusing cleanup outside staging parent' }
         if ((Get-Item -LiteralPath $taskStage -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Refusing cleanup of redirected staging directory' }
         Remove-Item -LiteralPath $taskStage -Recurse -Force
     }
