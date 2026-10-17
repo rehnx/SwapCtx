@@ -43,6 +43,14 @@ namespace SwapCtx {
 function Resolve-ReleaseDirectory([string]$Path) {
     return [SwapCtx.ReleaseDirectoryPaths]::Resolve($Path)
 }
+function Get-TaskSha256([string]$Path) {
+    $taskHasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        $taskStream = [IO.File]::OpenRead($Path)
+        try { return ([BitConverter]::ToString($taskHasher.ComputeHash($taskStream)).Replace('-','').ToLowerInvariant()) }
+        finally { $taskStream.Dispose() }
+    } finally { $taskHasher.Dispose() }
+}
 if ($env:OS -ne 'Windows_NT') { throw 'Windows installation requires Windows' }
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -60,7 +68,7 @@ $taskStage = Join-Path $taskParent ('.swapctx-install-' + [guid]::NewGuid().ToSt
 try {
     $taskSnapshot = Join-Path $taskStage 'input.zip'
     [IO.File]::Copy($taskInput.FullName, $taskSnapshot, $false)
-    if ((Get-FileHash -LiteralPath $taskSnapshot -Algorithm SHA256).Hash -ine $ExpectedSha256) { throw 'Archive SHA-256 mismatch; nothing installed' }
+    if ((Get-TaskSha256 $taskSnapshot) -ine $ExpectedSha256) { throw 'Archive SHA-256 mismatch; nothing installed' }
     $taskPayload = Join-Path $taskStage 'payload'
     [void][IO.Directory]::CreateDirectory($taskPayload)
     $taskNames = @('swapctx.exe','LICENSE','QUICKSTART.md','DEPENDENCIES.md','Cargo.lock','THIRD_PARTY_NOTICES.txt','third-party-inventory.json')
@@ -107,7 +115,7 @@ try {
                     $taskSink.Flush($true)
                 } finally { $taskSink.Dispose() }
             } finally { $taskSource.Dispose() }
-            if ((Get-FileHash -LiteralPath $taskFilePath -Algorithm SHA256).Hash -ine $taskFile.sha256) { throw 'Payload SHA-256 mismatch; nothing installed' }
+            if ((Get-TaskSha256 $taskFilePath) -ine $taskFile.sha256) { throw 'Payload SHA-256 mismatch; nothing installed' }
         }
         [IO.File]::WriteAllText((Join-Path $taskPayload 'manifest.json'),$taskManifestText,[Text.UTF8Encoding]::new($false))
     } finally { $taskZip.Dispose() }
