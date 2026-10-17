@@ -47,6 +47,14 @@ namespace SwapCtx {
 function Resolve-ReleaseDirectory([string]$Path) {
     return [SwapCtx.ReleaseDirectoryPaths]::Resolve($Path)
 }
+function Get-TaskSha256([string]$Path) {
+    $taskHasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        $taskStream = [IO.File]::OpenRead($Path)
+        try { return ([BitConverter]::ToString($taskHasher.ComputeHash($taskStream)).Replace('-','').ToLowerInvariant()) }
+        finally { $taskStream.Dispose() }
+    } finally { $taskHasher.Dispose() }
+}
 if ($env:OS -ne 'Windows_NT') { throw 'Windows acceptance requires Windows' }
 $taskWork = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($WorkDirectory)
 $taskReport = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Report)
@@ -81,8 +89,8 @@ function Invoke-Candidate([string[]]$Arguments,[int]$Expected = 0) {
     return (($taskOutput | ForEach-Object { $_.ToString() }) -join "`n")
 }
 try {
-    Confirm-Task ((Get-FileHash -LiteralPath $taskArchive -Algorithm SHA256).Hash -ieq $ExpectedSha256) 'archive_hash'
-    Confirm-Task ((Get-FileHash -LiteralPath $taskInstaller -Algorithm SHA256).Hash -ieq $InstallerSha256) 'installer_hash'
+    Confirm-Task ((Get-TaskSha256 $taskArchive) -ieq $ExpectedSha256) 'archive_hash'
+    Confirm-Task ((Get-TaskSha256 $taskInstaller) -ieq $InstallerSha256) 'installer_hash'
     [void][IO.Directory]::CreateDirectory($taskWork)
     $taskCreatedWork = $true
     $taskInstall = Join-Path $taskWork 'installed application'
@@ -93,7 +101,7 @@ try {
     $taskManifest = Get-Content -LiteralPath (Join-Path $taskInstall 'manifest.json') -Raw | ConvertFrom-Json
     $taskExecutable = Join-Path $taskInstall 'swapctx.exe'
     $taskEntry = @($taskManifest.files | Where-Object { $_.path -ceq 'swapctx.exe' })
-    Confirm-Task ($taskEntry.Count -eq 1 -and (Get-FileHash -LiteralPath $taskExecutable -Algorithm SHA256).Hash -ieq $taskEntry[0].sha256) 'installed_binary_hash'
+    Confirm-Task ($taskEntry.Count -eq 1 -and (Get-TaskSha256 $taskExecutable) -ieq $taskEntry[0].sha256) 'installed_binary_hash'
     $taskPhase = 'core_without_developer_path'
     $env:PATH = $taskInstall + ';' + (Join-Path $env:SystemRoot 'System32') + ';' + $env:SystemRoot + ';' + (Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0')
     $env:LOCALAPPDATA = Join-Path $taskWork 'isolated local data'
@@ -128,9 +136,9 @@ try {
     $taskPhase = 'recovery'
     $taskBackup = Join-Path $taskWork 'backup.db'
     [void](Invoke-Candidate @('backup',$taskBackup))
-    $taskBackupHash = (Get-FileHash -LiteralPath $taskBackup -Algorithm SHA256).Hash
+    $taskBackupHash = Get-TaskSha256 $taskBackup
     [void](Invoke-Candidate -Arguments @('backup',$taskBackup) -Expected 1)
-    Confirm-Task ((Get-FileHash -LiteralPath $taskBackup -Algorithm SHA256).Hash -ceq $taskBackupHash) 'backup_never_overwrites'
+    Confirm-Task ((Get-TaskSha256 $taskBackup) -ceq $taskBackupHash) 'backup_never_overwrites'
     $taskRecovery = Join-Path $taskWork 'new recovery store'
     [void](Invoke-Candidate @('--data-dir',$taskRecovery,'restore',$taskBackup))
     [void](Invoke-Candidate @('--data-dir',$taskRecovery,'doctor'))
@@ -149,7 +157,8 @@ try {
     $env:LOCALAPPDATA = $taskOriginalLocal
     Set-Location -LiteralPath $taskOriginalLocation.Path
     if ($taskCreatedWork) {
-        if ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($taskWork)) -ne $taskParent) { throw 'Refusing cleanup outside work parent' }
+        $taskWorkParent = Resolve-ReleaseDirectory ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($taskWork)))
+        if (-not [String]::Equals($taskWorkParent.TrimEnd('\'),$taskParent.TrimEnd('\'),[StringComparison]::OrdinalIgnoreCase)) { throw 'Refusing cleanup outside work parent' }
         if ((Get-Item -LiteralPath $taskWork -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Refusing cleanup of redirected work directory' }
         Remove-Item -LiteralPath $taskWork -Recurse -Force
     }

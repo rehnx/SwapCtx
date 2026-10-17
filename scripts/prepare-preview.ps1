@@ -43,6 +43,14 @@ namespace SwapCtx {
 function Resolve-ReleaseDirectory([string]$Path) {
     return [SwapCtx.ReleaseDirectoryPaths]::Resolve($Path)
 }
+function Get-TaskSha256([string]$Path) {
+    $taskHasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        $taskStream = [IO.File]::OpenRead($Path)
+        try { return ([BitConverter]::ToString($taskHasher.ComputeHash($taskStream)).Replace('-','').ToLowerInvariant()) }
+        finally { $taskStream.Dispose() }
+    } finally { $taskHasher.Dispose() }
+}
 $taskRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $taskOutput = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Destination)
 $taskParent = [IO.Path]::GetDirectoryName($taskOutput)
@@ -90,9 +98,9 @@ try {
     Invoke-PreviewCommand 'receipt_failure_regressions' $taskNode @((Join-Path $PSScriptRoot 'check-build-receipt.cjs'),$taskBinary,$taskReceipt)
     $taskZip = @(Get-ChildItem -LiteralPath $taskCandidate -Filter '*.zip' -File)
     if ($taskZip.Count -ne 1) { throw 'Expected exactly one candidate ZIP' }
-    $taskZipHash = (Get-FileHash -LiteralPath $taskZip[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    $taskZipHash = Get-TaskSha256 $taskZip[0].FullName
     $taskInstaller = Join-Path $taskCandidate 'install-windows.ps1'
-    $taskInstallerHash = (Get-FileHash -LiteralPath $taskInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
+    $taskInstallerHash = Get-TaskSha256 $taskInstaller
     $taskAcceptanceReport = Join-Path $taskCandidate 'windows-acceptance.json'
     Invoke-PreviewCommand 'recipient_powershell_only_acceptance' $taskPS @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',(Join-Path $taskCandidate 'test-windows-preview.ps1'),'-Archive',$taskZip[0].FullName,'-ExpectedSha256',$taskZipHash,'-Installer',$taskInstaller,'-InstallerSha256',$taskInstallerHash,'-WorkDirectory',(Join-Path $taskStage 'acceptance-work'),'-Report',$taskAcceptanceReport)
     $taskAcceptanceResult = Get-Content -LiteralPath $taskAcceptanceReport -Raw | ConvertFrom-Json
@@ -101,7 +109,7 @@ try {
     $taskGateFile = Join-Path $taskCandidate 'release-checks.json'
     [IO.File]::WriteAllText($taskGateFile,($taskResult | ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
     foreach ($taskFile in @($taskAcceptanceReport,$taskGateFile)) {
-        $taskLine = (Get-FileHash -LiteralPath $taskFile -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + [IO.Path]::GetFileName($taskFile) + "`n"
+        $taskLine = (Get-TaskSha256 $taskFile) + '  ' + [IO.Path]::GetFileName($taskFile) + "`n"
         [IO.File]::AppendAllText((Join-Path $taskCandidate 'SHA256SUMS.txt'),$taskLine,[Text.UTF8Encoding]::new($false))
     }
     [IO.Directory]::Move($taskCandidate,$taskOutput)
@@ -110,7 +118,8 @@ try {
     $env:PATH = $taskOriginalPath
     Pop-Location
     if (Test-Path -LiteralPath $taskStage) {
-        if ((Resolve-ReleaseDirectory ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($taskStage))) -ne $taskParent)) { throw 'Refusing cleanup outside staging parent' }
+        $taskActualParent = Resolve-ReleaseDirectory ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($taskStage)))
+        if (-not [String]::Equals($taskActualParent.TrimEnd('\'),$taskParent.TrimEnd('\'),[StringComparison]::OrdinalIgnoreCase)) { throw 'Refusing cleanup outside staging parent' }
         if ((Get-Item -LiteralPath $taskStage -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Refusing cleanup of redirected staging directory' }
         Remove-Item -LiteralPath $taskStage -Recurse -Force
     }

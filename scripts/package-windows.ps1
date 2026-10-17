@@ -44,6 +44,20 @@ namespace SwapCtx {
 function Resolve-ReleaseDirectory([string]$Path) {
     return [SwapCtx.ReleaseDirectoryPaths]::Resolve($Path)
 }
+function Resolve-ReleaseDirectoryKey([string]$Path) {
+    return (Resolve-ReleaseDirectory $Path).TrimEnd('\')
+}
+function Test-ReleaseDirectoryEqual([string]$Left,[string]$Right) {
+    return [String]::Equals((Resolve-ReleaseDirectoryKey $Left),(Resolve-ReleaseDirectoryKey $Right),[StringComparison]::OrdinalIgnoreCase)
+}
+function Get-TaskSha256([string]$Path) {
+    $taskHasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        $taskStream = [IO.File]::OpenRead($Path)
+        try { return ([BitConverter]::ToString($taskHasher.ComputeHash($taskStream)).Replace('-','').ToLowerInvariant()) }
+        finally { $taskStream.Dispose() }
+    } finally { $taskHasher.Dispose() }
+}
 if ($env:OS -ne 'Windows_NT') { throw 'Windows packaging requires Windows' }
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -84,15 +98,15 @@ try {
         $taskReceiptPath = Join-Path $taskStage 'build-info.json'
         [IO.File]::Copy($taskReceiptItem.FullName,$taskReceiptPath,$false)
         $taskReceipt = Get-Content -LiteralPath $taskReceiptPath -Raw | ConvertFrom-Json
-        $taskBinaryHash = (Get-FileHash -LiteralPath (Join-Path $taskPayload 'swapctx.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+        $taskBinaryHash = Get-TaskSha256 (Join-Path $taskPayload 'swapctx.exe')
         if ($taskReceipt.format_version -ne 1 -or $taskReceipt.target -cne 'x86_64-pc-windows-msvc' -or $taskReceipt.recipe -cne 'static-crt-brepro-v1' -or $taskReceipt.reproducible_on_this_toolchain -ne $true -or $taskReceipt.binary_sha256 -cne $taskBinaryHash -or @($taskReceipt.independent_binary_hashes).Count -ne 2 -or @($taskReceipt.independent_binary_hashes | Where-Object { $_ -cne $taskBinaryHash }).Count -ne 0 -or @($taskReceipt.pe.dynamic_crt_imports).Count -ne 0) { throw 'Build receipt does not describe a matching static-runtime release binary' }
         if ($taskReceipt.inputs -isnot [Array] -or $taskReceipt.inputs.Count -lt 3 -or $taskReceipt.reproducible_on_this_toolchain -isnot [bool] -or $taskReceipt.pe.machine -cne 'x86_64') { throw 'Incomplete build receipt' }
-        if ($taskReceipt.recipe_sha256 -ine (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'build-windows.cjs') -Algorithm SHA256).Hash) { throw 'Build recipe changed since receipt generation' }
+        if ($taskReceipt.recipe_sha256 -ine (Get-TaskSha256 (Join-Path $PSScriptRoot 'build-windows.cjs'))) { throw 'Build recipe changed since receipt generation' }
         $taskSeenSources = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
         foreach ($taskSource in $taskReceipt.inputs) {
             if ($taskSource.path -isnot [string] -or $taskSource.path -cnotmatch '^(Cargo\.(toml|lock)|rust-toolchain\.toml|(src|tests|integrations/codex)/[A-Za-z0-9_./-]+)$' -or @($taskSource.path.Split('/') | Where-Object { $_ -eq '..' }).Count -ne 0) { throw 'Unsafe source path in build receipt' }
             if (!$taskSeenSources.Add($taskSource.path) -or $taskSource.sha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Invalid source entry in build receipt' }
-            if ($taskSource.sha256 -ine (Get-FileHash -LiteralPath (Join-Path $taskRoot $taskSource.path) -Algorithm SHA256).Hash) { throw 'Source changed since release build; rebuild before packaging' }
+            if ($taskSource.sha256 -ine (Get-TaskSha256 (Join-Path $taskRoot $taskSource.path))) { throw 'Source changed since release build; rebuild before packaging' }
         }
         foreach ($taskRequired in @('Cargo.toml','Cargo.lock','rust-toolchain.toml','src/main.rs','integrations/codex/session.cjs')) { if (!$taskSeenSources.Contains($taskRequired)) { throw 'Incomplete source inventory in build receipt' } }
         # Release producers have Node; recipients/installers do not need it.
@@ -100,7 +114,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Independent build receipt inspection failed' }
     }
     $taskInventory = Get-Content -LiteralPath (Join-Path $taskPayload 'third-party-inventory.json') -Raw | ConvertFrom-Json
-    if ($taskInventory.lock_sha256 -ine (Get-FileHash -LiteralPath (Join-Path $taskPayload 'Cargo.lock') -Algorithm SHA256).Hash -or $taskInventory.notices_sha256 -ine (Get-FileHash -LiteralPath (Join-Path $taskPayload 'THIRD_PARTY_NOTICES.txt') -Algorithm SHA256).Hash) { throw 'Third-party notices are stale or changed; regenerate and review' }
+    if ($taskInventory.lock_sha256 -ine (Get-TaskSha256 (Join-Path $taskPayload 'Cargo.lock')) -or $taskInventory.notices_sha256 -ine (Get-TaskSha256 (Join-Path $taskPayload 'THIRD_PARTY_NOTICES.txt'))) { throw 'Third-party notices are stale or changed; regenerate and review' }
     $taskExecutable = Join-Path $taskPayload 'swapctx.exe'
     $taskReader = [IO.BinaryReader]::new([IO.File]::OpenRead($taskExecutable))
     try {
@@ -116,7 +130,7 @@ try {
     foreach ($taskName in $taskInputs.Keys) {
         $taskPath = Join-Path $taskPayload $taskName
         if ((Get-Item -LiteralPath $taskPath).Length -gt 32MB) { throw 'Payload exceeds installer file-size limit' }
-        $taskFiles += [ordered]@{ path = $taskName; bytes = (Get-Item -LiteralPath $taskPath).Length; sha256 = (Get-FileHash -LiteralPath $taskPath -Algorithm SHA256).Hash.ToLowerInvariant() }
+        $taskFiles += [ordered]@{ path = $taskName; bytes = (Get-Item -LiteralPath $taskPath).Length; sha256 = (Get-TaskSha256 $taskPath) }
     }
     $taskManifest = [ordered]@{ format_version = 1; name = 'swapctx'; version = $taskVersion; target = 'x86_64-pc-windows-msvc'; license = 'Apache-2.0'; files = $taskFiles }
     [IO.File]::WriteAllText((Join-Path $taskPayload 'manifest.json'), ($taskManifest | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
@@ -135,18 +149,18 @@ try {
             } finally { $taskSource.Dispose() }
         }
     } finally { $taskArchive.Dispose() }
-    $taskHash = (Get-FileHash -LiteralPath $taskArchivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $taskHash = Get-TaskSha256 $taskArchivePath
     $taskInstaller = Join-Path $taskStage 'install-windows.ps1'
     [IO.File]::Copy((Join-Path $PSScriptRoot 'install-windows.ps1'),$taskInstaller,$false)
-    $taskInstallerHash = (Get-FileHash -LiteralPath $taskInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
+    $taskInstallerHash = Get-TaskSha256 $taskInstaller
     $taskChecksums = "$taskHash  $taskArchiveName`n$taskInstallerHash  install-windows.ps1`n"
     $taskAcceptance = Join-Path $taskStage 'test-windows-preview.ps1'
     [IO.File]::Copy((Join-Path $PSScriptRoot 'test-windows-preview.ps1'),$taskAcceptance,$false)
-    $taskChecksums += (Get-FileHash -LiteralPath $taskAcceptance -Algorithm SHA256).Hash.ToLowerInvariant() + "  test-windows-preview.ps1`n"
-    if ($BuildInfo) { $taskChecksums += (Get-FileHash -LiteralPath $taskReceiptPath -Algorithm SHA256).Hash.ToLowerInvariant() + "  build-info.json`n" }
+    $taskChecksums += (Get-TaskSha256 $taskAcceptance) + "  test-windows-preview.ps1`n"
+    if ($BuildInfo) { $taskChecksums += (Get-TaskSha256 $taskReceiptPath) + "  build-info.json`n" }
     [IO.File]::WriteAllText((Join-Path $taskStage 'SHA256SUMS.txt'), $taskChecksums, [Text.UTF8Encoding]::new($false))
     # Delete only our known staging child; publish both outputs in one directory rename.
-    if ((Resolve-ReleaseDirectory ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($taskPayload))) -ne (Resolve-ReleaseDirectory $taskStage))) { throw 'Refusing cleanup outside staging directory' }
+    if (-not (Test-ReleaseDirectoryEqual ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($taskPayload))) $taskStage)) { throw 'Refusing cleanup outside staging directory' }
     if ((Get-Item -LiteralPath $taskPayload -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Refusing cleanup of redirected payload directory' }
     Remove-Item -LiteralPath $taskPayload -Recurse -Force
     [IO.Directory]::Move($taskStage, $taskOutput)
@@ -159,7 +173,7 @@ try {
     try {
         if (Test-Path -LiteralPath $taskStage) {
             $taskActualParent = Resolve-ReleaseDirectory ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($taskStage)))
-            if ($taskActualParent -ne $taskParent) { throw "Refusing cleanup outside staging parent: actual '$taskActualParent', expected '$taskParent'" }
+            if (-not [String]::Equals($taskActualParent.TrimEnd('\'),$taskParent.TrimEnd('\'),[StringComparison]::OrdinalIgnoreCase)) { throw "Refusing cleanup outside staging parent: actual '$taskActualParent', expected '$taskParent'" }
             if ((Get-Item -LiteralPath $taskStage -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Refusing cleanup of redirected staging directory' }
             Remove-Item -LiteralPath $taskStage -Recurse -Force
         }

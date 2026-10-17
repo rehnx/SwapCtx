@@ -30,6 +30,7 @@ function ps(args) {
   return result;
 }
 function pack(dest, input = binary) { return ps(['-File',script,'-Destination',dest,'-Binary',input]); }
+function packWithScript(scriptPath, dest, input = binary) { return ps(['-File',scriptPath,'-Destination',dest,'-Binary',input]); }
 function ok(result, phase = 'command') { assert.equal(result.status,0,diagnostic(result,phase)); return result.stdout; }
 function install(archive, destination, expected = hash(archive)) {return ps(['-File',installer,'-Archive',archive,'-ExpectedSha256',expected,'-Destination',destination]);}
 function modifiedArchive(label, change) {
@@ -129,6 +130,38 @@ test('documented command locates the default release binary outside the source c
   const output = path.join(root,'default binary candidate');
   const result = spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',script,'-Destination',output],{cwd:path.dirname(binary),encoding:'utf8',timeout:60000});
   ok(result);
+  assert.equal(fs.existsSync(path.join(output,archiveName)),true);
+});
+test('packaging does not depend on Get-FileHash cmdlet availability', () => {
+  const source = path.join(root,'hash fallback source');
+  fs.mkdirSync(path.join(source,'scripts'),{recursive:true});
+  fs.mkdirSync(path.join(source,'docs'));
+  const original = fs.readFileSync(script,'utf8');
+  fs.writeFileSync(path.join(source,'scripts/package-windows.ps1'), "function Get-FileHash { throw 'GET_FILE_HASH_SHOULD_NOT_BE_CALLED' }\n" + original);
+  fs.copyFileSync(path.join(__dirname,'install-windows.ps1'),path.join(source,'scripts/install-windows.ps1'));
+  fs.copyFileSync(path.join(__dirname,'test-windows-preview.ps1'),path.join(source,'scripts/test-windows-preview.ps1'));
+  for (const name of ['Cargo.toml','Cargo.lock','LICENSE','THIRD_PARTY_NOTICES.txt']) fs.copyFileSync(path.join(__dirname,'..',name),path.join(source,name));
+  for (const name of ['WINDOWS_RELEASE.md','DEPENDENCIES.md','third-party-inventory.json']) fs.copyFileSync(path.join(__dirname,'../docs',name),path.join(source,'docs',name));
+  const output = path.join(root,'hash fallback candidate');
+  const result = packWithScript(path.join(source,'scripts/package-windows.ps1'),output,binary);
+  ok(result,'hash fallback packaging');
+  assert.equal(fs.existsSync(path.join(output,archiveName)),true);
+  assert.doesNotMatch(result.stdout + result.stderr,/GET_FILE_HASH_SHOULD_NOT_BE_CALLED/);
+});
+test('cleanup parent guard accepts equivalent paths with different trailing separators', () => {
+  const source = path.join(root,'trailing separator source');
+  fs.mkdirSync(path.join(source,'scripts'),{recursive:true});
+  fs.mkdirSync(path.join(source,'docs'));
+  const marker = "$taskParent = Resolve-ReleaseDirectory $taskParent";
+  const original = fs.readFileSync(script,'utf8');
+  assert.ok(original.includes(marker),'task parent marker must remain explicit');
+  fs.writeFileSync(path.join(source,'scripts/package-windows.ps1'), original.replace(marker, marker + "\n$taskParent = $taskParent + '\\'"));
+  fs.copyFileSync(path.join(__dirname,'install-windows.ps1'),path.join(source,'scripts/install-windows.ps1'));
+  fs.copyFileSync(path.join(__dirname,'test-windows-preview.ps1'),path.join(source,'scripts/test-windows-preview.ps1'));
+  for (const name of ['Cargo.toml','Cargo.lock','LICENSE','THIRD_PARTY_NOTICES.txt']) fs.copyFileSync(path.join(__dirname,'..',name),path.join(source,name));
+  for (const name of ['WINDOWS_RELEASE.md','DEPENDENCIES.md','third-party-inventory.json']) fs.copyFileSync(path.join(__dirname,'../docs',name),path.join(source,'docs',name));
+  const output = path.join(root,'trailing separator candidate');
+  ok(packWithScript(path.join(source,'scripts/package-windows.ps1'),output,binary),'trailing separator packaging');
   assert.equal(fs.existsSync(path.join(output,archiveName)),true);
 });
 test('distributed installer verifies every file and installs into a new directory', () => {
