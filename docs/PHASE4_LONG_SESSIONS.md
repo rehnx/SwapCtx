@@ -1,5 +1,7 @@
 # Phase 4: long-session reliability and automatic recovery
 
+Historical milestone record. [Phase 5](PHASE5_EVERYDAY_CODEX.md) contains the later offline investigation of the user's two retained authenticated runs and current everyday-use commands. No long-session evaluations were repeated for Phase 5.
+
 Windows implementation and controlled verification, 2026-10-17. Rust 1.99.0, Node 24.17.0, Codex CLI 0.162.1. Storage schema, locked dependencies, default read-only console mode and context protocol v1 are unchanged. **Extended real-model comparison and natural automatic recovery remain unverified.**
 
 ## Evidence accepted and limits

@@ -1,0 +1,45 @@
+{
+  "protocol": "swapctx.phase5-verification",
+  "version": 1,
+  "date": "2026-10-17",
+  "platform": "Windows x86_64",
+  "offlineOnly": true,
+  "codexInvocations": 0,
+  "externalAgentInvocations": 0,
+  "providerRequests": 0,
+  "soakTestsRun": false,
+  "newRealModelEvidence": false,
+  "commands": [
+    "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\verify.ps1 -DeterministicOnly -ReleaseTests",
+    "cargo build --locked --offline --release",
+    "node scripts/check-session.cjs target/release/swapctx.exe",
+    "node scripts/check-everyday.cjs target/release/swapctx.exe",
+    "node scripts/audit-phase4.cjs .build/soak-20261017-033834.json .build/soak-full-20261017-035118.json",
+    "git diff --check"
+  ],
+  "checks": {
+    "rustfmt": "passed",
+    "clippyWarningsDenied": "passed",
+    "offlineReleaseBuild": "passed",
+    "nativeDebugPassed": 47,
+    "nativeReleasePassed": 47,
+    "optionalPerformanceBenchmark": "ignored",
+    "sqlPassed": 10,
+    "contextPassed": 19,
+    "sessionTransportPassed": 23,
+    "everydayObservatoryEvidencePassed": 23,
+    "pilotOracleFixturesPassed": 12,
+    "deterministicModeRejectsAgentOptions": "passed",
+    "retainedPhase4HashesAndSummariesReproduce": "passed"
+  },
+  "evidenceScope": "Real compiled local CLI, in-process protocol fixtures and Node-only process fixtures in disposable projects. No native Codex runtime exercised in Phase 5.",
+  "unverified": [
+    "New adapter changes against a native Codex process or real model",
+    "Naturally occurring real-model compaction recovery",
+    "Comparative adherence or cost improvement",
+    "Full agent/tool resource overhead",
+    "Other Codex versions, hosted CI and Linux execution",
+    "Online dependency advisory audit"
+  ],
+  "readiness": "Opt-in everyday managed-console use on the pinned setup, with prior authenticated pilot evidence and offline regressions; no guaranteed recovery, adherence or enforcement."
+}

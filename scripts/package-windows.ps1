@@ -1,0 +1,119 @@
+# Package an already verified, trusted local binary. Never invokes an AI agent.
+param(
+    [Parameter(Mandatory = $true)][string]$Destination,
+    [string]$Binary,
+    # Optional local receipt from the independent offline release-build recipe.
+    [string]$BuildInfo
+)
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+if ($env:OS -ne 'Windows_NT') { throw 'Windows packaging requires Windows' }
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$taskRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+if (!$Binary) { $Binary = Join-Path $taskRoot 'target/release/swapctx.exe' }
+$taskOutput = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Destination)
+$taskParent = [IO.Path]::GetDirectoryName($taskOutput)
+if (!(Test-Path -LiteralPath $taskParent -PathType Container)) { throw 'Destination parent must exist' }
+if (Get-Item -LiteralPath $taskOutput -Force -ErrorAction SilentlyContinue) { throw 'Destination already exists; nothing was overwritten' }
+$taskVersion = [regex]::Match((Get-Content -LiteralPath (Join-Path $taskRoot 'Cargo.toml') -Raw), '(?m)^version = "([0-9]+\.[0-9]+\.[0-9]+)"').Groups[1].Value
+if (!$taskVersion) { throw 'Cannot determine package version' }
+$taskInputs = [ordered]@{
+    'swapctx.exe' = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Binary)
+    'LICENSE' = (Join-Path $taskRoot 'LICENSE')
+    'QUICKSTART.md' = (Join-Path $taskRoot 'docs/WINDOWS_RELEASE.md')
+    'DEPENDENCIES.md' = (Join-Path $taskRoot 'docs/DEPENDENCIES.md')
+    'Cargo.lock' = (Join-Path $taskRoot 'Cargo.lock')
+    'THIRD_PARTY_NOTICES.txt' = (Join-Path $taskRoot 'THIRD_PARTY_NOTICES.txt')
+    'third-party-inventory.json' = (Join-Path $taskRoot 'docs/third-party-inventory.json')
+}
+foreach ($taskInput in $taskInputs.Values) {
+    $taskItem = Get-Item -LiteralPath $taskInput -Force
+    if ($taskItem.PSIsContainer -or ($taskItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "Package input must be a regular file: $taskInput" }
+}
+$taskStage = Join-Path $taskParent ('.swapctx-package-' + [guid]::NewGuid().ToString('N'))
+[void][IO.Directory]::CreateDirectory($taskStage)
+try {
+    # Copy first: validate and hash the exact bytes that will be distributed.
+    $taskPayload = Join-Path $taskStage 'payload'
+    [void][IO.Directory]::CreateDirectory($taskPayload)
+    foreach ($taskName in $taskInputs.Keys) { [IO.File]::Copy($taskInputs[$taskName], (Join-Path $taskPayload $taskName), $false) }
+    if ($BuildInfo) {
+        $taskReceiptItem = Get-Item -LiteralPath $BuildInfo -Force
+        if ($taskReceiptItem.PSIsContainer -or ($taskReceiptItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $taskReceiptItem.Length -gt 128KB) { throw 'Build receipt must be a small regular file' }
+        $taskReceiptPath = Join-Path $taskStage 'build-info.json'
+        [IO.File]::Copy($taskReceiptItem.FullName,$taskReceiptPath,$false)
+        $taskReceipt = Get-Content -LiteralPath $taskReceiptPath -Raw | ConvertFrom-Json
+        $taskBinaryHash = (Get-FileHash -LiteralPath (Join-Path $taskPayload 'swapctx.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($taskReceipt.format_version -ne 1 -or $taskReceipt.target -cne 'x86_64-pc-windows-msvc' -or $taskReceipt.recipe -cne 'static-crt-brepro-v1' -or $taskReceipt.reproducible_on_this_toolchain -ne $true -or $taskReceipt.binary_sha256 -cne $taskBinaryHash -or @($taskReceipt.independent_binary_hashes).Count -ne 2 -or @($taskReceipt.independent_binary_hashes | Where-Object { $_ -cne $taskBinaryHash }).Count -ne 0 -or @($taskReceipt.pe.dynamic_crt_imports).Count -ne 0) { throw 'Build receipt does not describe a matching static-runtime release binary' }
+        if ($taskReceipt.inputs -isnot [Array] -or $taskReceipt.inputs.Count -lt 3 -or $taskReceipt.reproducible_on_this_toolchain -isnot [bool] -or $taskReceipt.pe.machine -cne 'x86_64') { throw 'Incomplete build receipt' }
+        if ($taskReceipt.recipe_sha256 -ine (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'build-windows.cjs') -Algorithm SHA256).Hash) { throw 'Build recipe changed since receipt generation' }
+        $taskSeenSources = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($taskSource in $taskReceipt.inputs) {
+            if ($taskSource.path -isnot [string] -or $taskSource.path -cnotmatch '^(Cargo\.(toml|lock)|rust-toolchain\.toml|(src|tests|integrations/codex)/[A-Za-z0-9_./-]+)$' -or @($taskSource.path.Split('/') | Where-Object { $_ -eq '..' }).Count -ne 0) { throw 'Unsafe source path in build receipt' }
+            if (!$taskSeenSources.Add($taskSource.path) -or $taskSource.sha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Invalid source entry in build receipt' }
+            if ($taskSource.sha256 -ine (Get-FileHash -LiteralPath (Join-Path $taskRoot $taskSource.path) -Algorithm SHA256).Hash) { throw 'Source changed since release build; rebuild before packaging' }
+        }
+        foreach ($taskRequired in @('Cargo.toml','Cargo.lock','rust-toolchain.toml','src/main.rs','integrations/codex/session.cjs')) { if (!$taskSeenSources.Contains($taskRequired)) { throw 'Incomplete source inventory in build receipt' } }
+        # Release producers have Node; recipients/installers do not need it.
+        & node (Join-Path $PSScriptRoot 'validate-build-info.cjs') (Join-Path $taskPayload 'swapctx.exe') $taskReceiptPath $taskRoot
+        if ($LASTEXITCODE -ne 0) { throw 'Independent build receipt inspection failed' }
+    }
+    $taskInventory = Get-Content -LiteralPath (Join-Path $taskPayload 'third-party-inventory.json') -Raw | ConvertFrom-Json
+    if ($taskInventory.lock_sha256 -ine (Get-FileHash -LiteralPath (Join-Path $taskPayload 'Cargo.lock') -Algorithm SHA256).Hash -or $taskInventory.notices_sha256 -ine (Get-FileHash -LiteralPath (Join-Path $taskPayload 'THIRD_PARTY_NOTICES.txt') -Algorithm SHA256).Hash) { throw 'Third-party notices are stale or changed; regenerate and review' }
+    $taskExecutable = Join-Path $taskPayload 'swapctx.exe'
+    $taskReader = [IO.BinaryReader]::new([IO.File]::OpenRead($taskExecutable))
+    try {
+        if ($taskReader.ReadUInt16() -ne 0x5a4d) { throw 'Not a Windows PE executable' }
+        $taskReader.BaseStream.Position = 0x3c
+        $taskOffset = $taskReader.ReadUInt32()
+        $taskReader.BaseStream.Position = $taskOffset
+        if ($taskReader.ReadUInt32() -ne 0x4550 -or $taskReader.ReadUInt16() -ne 0x8664) { throw 'Expected an x64 Windows PE executable' }
+    } finally { $taskReader.Dispose() }
+    $taskReported = & $taskExecutable --version
+    if ($LASTEXITCODE -ne 0 -or "$taskReported" -cne "swapctx $taskVersion") { throw 'Executable version does not match Cargo.toml' }
+    $taskFiles = @()
+    foreach ($taskName in $taskInputs.Keys) {
+        $taskPath = Join-Path $taskPayload $taskName
+        if ((Get-Item -LiteralPath $taskPath).Length -gt 32MB) { throw 'Payload exceeds installer file-size limit' }
+        $taskFiles += [ordered]@{ path = $taskName; bytes = (Get-Item -LiteralPath $taskPath).Length; sha256 = (Get-FileHash -LiteralPath $taskPath -Algorithm SHA256).Hash.ToLowerInvariant() }
+    }
+    $taskManifest = [ordered]@{ format_version = 1; name = 'swapctx'; version = $taskVersion; target = 'x86_64-pc-windows-msvc'; license = 'Apache-2.0'; files = $taskFiles }
+    [IO.File]::WriteAllText((Join-Path $taskPayload 'manifest.json'), ($taskManifest | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
+    if ((Get-ChildItem -LiteralPath $taskPayload -File | Measure-Object -Property Length -Sum).Sum -gt 64MB) { throw 'Payload exceeds installer total-size limit' }
+    $taskArchiveName = "swapctx-$taskVersion-windows-x64.zip"
+    $taskArchivePath = Join-Path $taskStage $taskArchiveName
+    $taskArchive = [IO.Compression.ZipFile]::Open($taskArchivePath, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($taskName in (@($taskInputs.Keys) + @('manifest.json') | Sort-Object)) {
+            $taskEntry = $taskArchive.CreateEntry($taskName, [IO.Compression.CompressionLevel]::Optimal)
+            $taskEntry.LastWriteTime = [DateTimeOffset]::new(2000, 1, 1, 0, 0, 0, [TimeSpan]::Zero)
+            $taskSource = [IO.File]::OpenRead((Join-Path $taskPayload $taskName))
+            try {
+                $taskSink = $taskEntry.Open()
+                try { $taskSource.CopyTo($taskSink) } finally { $taskSink.Dispose() }
+            } finally { $taskSource.Dispose() }
+        }
+    } finally { $taskArchive.Dispose() }
+    $taskHash = (Get-FileHash -LiteralPath $taskArchivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $taskInstaller = Join-Path $taskStage 'install-windows.ps1'
+    [IO.File]::Copy((Join-Path $PSScriptRoot 'install-windows.ps1'),$taskInstaller,$false)
+    $taskInstallerHash = (Get-FileHash -LiteralPath $taskInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
+    $taskChecksums = "$taskHash  $taskArchiveName`n$taskInstallerHash  install-windows.ps1`n"
+    $taskAcceptance = Join-Path $taskStage 'test-windows-preview.ps1'
+    [IO.File]::Copy((Join-Path $PSScriptRoot 'test-windows-preview.ps1'),$taskAcceptance,$false)
+    $taskChecksums += (Get-FileHash -LiteralPath $taskAcceptance -Algorithm SHA256).Hash.ToLowerInvariant() + "  test-windows-preview.ps1`n"
+    if ($BuildInfo) { $taskChecksums += (Get-FileHash -LiteralPath $taskReceiptPath -Algorithm SHA256).Hash.ToLowerInvariant() + "  build-info.json`n" }
+    [IO.File]::WriteAllText((Join-Path $taskStage 'SHA256SUMS.txt'), $taskChecksums, [Text.UTF8Encoding]::new($false))
+    # Delete only our known staging child; publish both outputs in one directory rename.
+    if ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($taskPayload)) -ne $taskStage) { throw 'Refusing cleanup outside staging directory' }
+    Remove-Item -LiteralPath $taskPayload -Recurse -Force
+    [IO.Directory]::Move($taskStage, $taskOutput)
+    Write-Output "Packaged: $(Join-Path $taskOutput $taskArchiveName)"
+    Write-Output 'Unsigned local candidate; checksums do not authenticate the publisher or prove verification.'
+} finally {
+    if (Test-Path -LiteralPath $taskStage) {
+        if ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($taskStage)) -ne $taskParent) { throw 'Refusing cleanup outside staging parent' }
+        Remove-Item -LiteralPath $taskStage -Recurse -Force
+    }
+}

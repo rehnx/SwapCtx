@@ -1,0 +1,74 @@
+{
+  "date": "2026-10-17",
+  "scope": "Static-runtime Windows release builds, repeatability and session command discovery; offline only",
+  "discovery": {
+    "original_development_executable": "target/release/swapctx.exe",
+    "observed_import": "VCRUNTIME140.DLL plus dynamic Universal CRT API sets",
+    "implication": "Prior developer-machine copying did not establish runtime availability on a clean Windows installation"
+  },
+  "release_recipe": {
+    "command": "node scripts/build-windows.cjs .build/reproducible-release-20261017 --test",
+    "exit_code": 0,
+    "log": ".build/reproducible-build.log",
+    "fresh_source_directories": 2,
+    "fresh_target_directories": 2,
+    "target": "x86_64-pc-windows-msvc",
+    "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "binary_sha256_both_builds": "fd00664eb90dc8a4f26e0253f0b267e1e62feb77d98ad65f79821ea88a44ab2a",
+    "native_static_release_passed": 47,
+    "benchmark": "ignored, not run",
+    "direct_imports": ["API-MS-WIN-CORE-SYNCH-L1-2-0.DLL", "BCRYPTPRIMITIVES.DLL", "KERNEL32.DLL", "NTDLL.DLL"],
+    "delay_imports": [],
+    "dynamic_crt_imports": [],
+    "limits": "Same machine, compiler, cached dependencies and native environment; not cross-machine or authenticated provenance"
+  },
+  "standard_foundation": {
+    "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -DeterministicOnly -ReleaseTests",
+    "exit_code": 0,
+    "log": ".build/windows-build-foundation-verification.log",
+    "fmt_clippy_release_build": "passed",
+    "native_debug_passed": 47,
+    "native_release_passed": 47,
+    "supplemental_passed": {"schema": 10, "context": 23, "session_transport": 23, "everyday": 27, "package_installation": 12, "pe_and_command_discovery": 4, "pilot_oracle_fixtures_only": 12},
+    "third_party_notice_regeneration": "passed"
+  },
+  "static_binary_regressions": {
+    "log": ".build/static-release-verification.log",
+    "all_exit_codes": 0,
+    "context": 23,
+    "session_transport": 23,
+    "everyday": 27,
+    "package_installation": 12,
+    "pe_and_command_discovery_static_required": 4,
+    "receipt_checks_at_first_run": 3,
+    "final_receipt_command": "node scripts/check-build-receipt.cjs .build/reproducible-release-20261017/swapctx.exe .build/reproducible-release-20261017/build-info.json",
+    "final_receipt_exit_code": 0,
+    "final_receipt_passed": 4,
+    "receipt_rejections": ["different binary hash", "changed source hash", "changed recipe hash", "empty source inventory"],
+    "binary_path_scan": "Exact current user/workspace prefixes absent in UTF-8 and UTF-16LE scan; not a comprehensive privacy audit"
+  },
+  "candidate": {
+    "directory": ".build/static-preview-20261017",
+    "zip_sha256": "05976dacd1cfc8572ff054aefab9cb81ee155106eee0813faff325dd55a4b915",
+    "installer_sha256": "707f206f66128b9f55403ee2a03dd83b01c927335b904519260b7ae78283c2f8",
+    "build_info_sha256": "3da9855b827c5b3ae4a56d725bbf687b1d6899909051e6f8f6fa005c6246a051",
+    "signed": false,
+    "published": false
+  },
+  "remaining_release_gates": [
+    "Clean Windows machine and downloaded-file/SmartScreen/Mark-of-the-Web verification",
+    "Hosted CI and static recipe verification outside this environment",
+    "Current advisory scan and human redistribution review, including static compiler/runtime obligations",
+    "Cross-machine/toolchain/SDK/cache-location reproducibility; linker, SDK and inherited build environment not fully pinned or inventoried",
+    "Code signing and authenticated source-to-binary provenance absent",
+    "No persistent PATH registration, WinGet/Scoop manifest, public package identifier or hosted download URL",
+    "Earlier temporary-cwd PowerShell environment access failure remains unverified outside this environment"
+  ],
+  "codex_processes": 0,
+  "real_model_calls": 0,
+  "external_ai_agents": 0,
+  "soak_evaluations": 0,
+  "remote_mutations": 0,
+  "user_path_modified": false,
+  "user_data_modified": false
+}

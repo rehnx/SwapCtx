@@ -1,0 +1,62 @@
+{
+  "scope": "Windows portable release engineering; offline deterministic verification only",
+  "date": "2026-10-17",
+  "full_verification": {
+    "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\verify.ps1 -DeterministicOnly -ReleaseTests",
+    "exit_code": 0,
+    "capture": "Direct Node child-process status capture; log in .build/release-candidate-verification.log",
+    "format": "passed",
+    "clippy_all_targets_deny_warnings": "passed",
+    "release_build": "passed",
+    "native_debug_passed": 47,
+    "native_release_passed": 47,
+    "benchmark": "ignored, not run",
+    "supplemental": {
+      "schema": 10,
+      "context": 23,
+      "session_transport": 23,
+      "everyday": 27,
+      "package_at_full_run": 5,
+      "pilot_oracle_fixtures_only": 12
+    }
+  },
+  "final_package_regression": {
+    "command": "node scripts/check-package.cjs target/release/swapctx.exe",
+    "exit_code": 0,
+    "passed": 6,
+    "failed": 0,
+    "reason_for_rerun": "Fixed PowerShell default binary resolution and added documented-command regression after full verification",
+    "checks": [
+      "Exact allowlisted ZIP entries, manifest lengths/hashes and archive checksum",
+      "Extracted CLI version/help, nested retrieval, backup/restore, doctor, embedded local-only adapter status",
+      "Existing output unchanged and no staging leftovers",
+      "Invalid PE rejected with no publication or staging leftovers",
+      "Identical archive bytes from identical inputs on this runtime",
+      "Default binary resolved with release directory as cwd"
+    ]
+  },
+  "candidate": {
+    "path": ".build/windows-candidate-20261017/swapctx-0.1.0-windows-x64.zip",
+    "sha256": "3dc0f1ea3262ac37d613bc79eb5dc3ae9577e86f9f475089abadcd7a4815228a",
+    "signed": false,
+    "published": false
+  },
+  "resolved_failures": [
+    "ZIP entry timestamps must be set before content writes on Windows .NET",
+    "PSScriptRoot in a PowerShell 5.1 parameter default was empty; resolve default in script body",
+    "Outer PowerShell log redirection produced ambiguous status from normal Cargo stderr; direct process capture returned zero"
+  ],
+  "remaining_limitations": [
+    "PowerShell packaging from temporary-directory cwd produced Access denied in this environment; root cause not established. Source and release-directory cwd passed.",
+    "Unsigned local candidate; checksums do not authenticate publisher or source provenance",
+    "Hosted CI, clean-machine validation, advisory and redistribution-license review remain incomplete",
+    "Package script executes trusted binary for version check and does not certify source-to-binary correspondence",
+    "Process termination may leave staging; cross-runtime reproducible ZIPs and reproducible compilation unverified",
+    "No new evidence of actual model behavior or automatic context recovery"
+  ],
+  "codex_invocations": 0,
+  "real_model_calls": 0,
+  "external_agents": 0,
+  "soak_tests": 0,
+  "user_data_modified": false
+}

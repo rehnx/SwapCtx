@@ -1,0 +1,62 @@
+{
+  "protocol": "swapctx.maintenance-verification",
+  "version": 1,
+  "date": "2026-10-17",
+  "scope": "Retrieval budget selection, distinct terms, selection fingerprint v2, early session-reference validation",
+  "platform": "Windows x86_64 MSVC",
+  "offlineOnly": true,
+  "codexInvocations": 0,
+  "externalAgentInvocations": 0,
+  "providerRequests": 0,
+  "soakTestsRun": false,
+  "soakHarnessTestsRun": false,
+  "userStoresModified": false,
+  "storageSchemaVersion": 3,
+  "contextProtocolVersion": 1,
+  "selectionFingerprintVersion": 2,
+  "dependenciesChanged": false,
+  "verificationCommand": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\verify.ps1 -DeterministicOnly -ReleaseTests",
+  "finalVerificationExitCode": 0,
+  "checks": {
+    "rustfmt": "passed",
+    "clippyWarningsDenied": "passed",
+    "lockedOfflineReleaseBuild": "passed",
+    "nativeDebugPassed": 47,
+    "nativeReleasePassed": 47,
+    "optionalPerformanceBenchmark": "ignored",
+    "sqlPassed": 10,
+    "contextPassed": 23,
+    "sessionTransportPassed": 23,
+    "everydaySessionObservatoryPassed": 27,
+    "pilotOracleFixturesPassed": 12,
+    "supplementalTotal": 95
+  },
+  "failureHistory": [
+    {
+      "stage": "Before implementation",
+      "result": "New budget regression failed on the prior release executable: one record returned instead of four fitting records. Existing 19 context checks passed.",
+      "resolution": "Rank lightweight descriptors and pack whole fitting records; continue after non-fitting candidates."
+    },
+    {
+      "stage": "Expanded regression verification",
+      "result": "An added Unicode fixture incorrectly expected the escaped record plus all other notes to fit an 8192-byte packet. Native checks and the preceding budget assertions passed; the script stopped at that fixture assertion.",
+      "resolution": "Query the escaped record specifically for its round-trip assertion; retain independent budget/coverage/counter assertions across seven budgets. Final complete verification passed."
+    }
+  ],
+  "compatibility": {
+    "dataMigrationRequired": false,
+    "legacyReferencesAccepted": true,
+    "legacyMissingPolicyHashAccepted": true,
+    "legacyFingerprintRefresh": "One acknowledged update on the existing thread; then unchanged selections avoid further injection.",
+    "corruptReferences": "Rejected and retained, including when new-thread mode is requested."
+  },
+  "limitations": [
+    "No new native Codex or real-model verification; lifecycle operations use in-process fixtures.",
+    "Conditional injection behavior does not measure actual model token or billing savings.",
+    "Greedy record packing can reserve a few bytes for metadata and does not promise optimal utilization.",
+    "Whole-store integrity checking and conflict grouping remain proportional to stored data.",
+    "Natural real-model compaction recovery, comparative benefit and total agent/tool resource cost remain unverified.",
+    "Hosted CI, Linux execution and online dependency advisory scanning remain unverified.",
+    "Plaintext storage, heuristic secret detection and cooperative filesystem checks retain their documented limits."
+  ]
+}

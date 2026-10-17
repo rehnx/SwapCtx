@@ -1,5 +1,7 @@
 # Codex lifecycle integration
 
+Historical lifecycle milestone. See [Phase 5](PHASE5_EVERYDAY_CODEX.md) for current everyday commands, later authenticated evidence, offline verification and remaining limits.
+
 Windows verification: 2026-10-16; Codex CLI **0.162.1**, Node.js **24.17.0**, Rust **1.99.0**, bundled SQLite **3.53.2**. Schema 3 and locked dependencies are unchanged. This document supersedes the lifecycle conclusions in [the earlier readiness milestone](CODEX_READINESS.md).
 
 SwapCtx now provides an opt-in managed Codex console. Actual Codex provider requests contain selected project context at startup, after resumption, after manual compaction, and in an immediate continuation following automatic compaction. These transport checks use a synthetic local provider. **Real-model use of the selected knowledge remains unverified:** the separate evaluation stopped with `authentication_required` before a model request. This is an integration pilot, not unconditional production clearance or demonstrated model adherence.

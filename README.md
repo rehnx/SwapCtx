@@ -6,11 +6,52 @@ SwapCtx preserves requirements, decisions, notes, and rules that you explicitly 
 
 ## Foundation status
 
-The [authenticated pilot passed eight checks](docs/evidence/codex-pilot-2026-10-17-passed.json) in the user's normal Windows terminal, including six coding stages, resumption and manual compaction. [Phase 4](docs/PHASE4_LONG_SESSIONS.md) adds a paired longer-session evaluator, token/resource observability and reduced context-delivery overhead. New real-provider trials remain blocked in this tool sandbox; naturally occurring automatic recovery and comparative benefit are still unverified.
+[Phase 6 release preparation](docs/PHASE6_RELEASE_APPROVAL.md) now provides one
+offline producer command and a PowerShell-only recipient acceptance script.
+Receipt-backed packaging independently checks the actual executable imports,
+complete source inventory and build helper hashes. No public release, package
+submission or persistent user PATH modification has been performed.
+
+The latest [retrieval and session reliability improvements](docs/RETRIEVAL_SESSION_RELIABILITY.md) fix budget selection that discarded smaller useful notes, deduplicate query terms, avoid history reinjection for unchanged selected knowledge, and reject damaged session references before native startup. Storage schema 3, context protocol v1, dependencies and existing command syntax are preserved. Verification remains offline only.
+
+The [authenticated pilot passed eight checks](docs/evidence/codex-pilot-2026-10-17-passed.json) in the user's normal Windows terminal, including six coding stages, resumption and manual compaction. [Phase 5](docs/PHASE5_EVERYDAY_CODEX.md) adds local-only status, an optional live terminal observatory, explicit console memory saves and Codex-home selection. All Phase 5 verification is offline: no Codex invocation, model request or soak test. Ready for opt-in everyday use on the pinned setup; natural automatic recovery and comparative benefit remain unverified.
+
+The retained [Phase 4 reports were audited offline](docs/evidence/phase4-offline-audit-2026-10-17.json): all 6/6 checks per arm passed in the short run; the longer run retained 21 managed and 22 baseline passing turns before `codex_turn_failed`. Neither recorded automatic compaction. The failed turn's root cause is absent from the old report; new console diagnostics retain safe categories without raw backend messages. See [the investigation and everyday commands](docs/PHASE5_EVERYDAY_CODEX.md).
 
 Phase 3 provides the managed console's startup, resume and compaction transport. The later authenticated pilot demonstrates context use and tested requirement adherence for those particular turns, without a general guarantee. Native TUI hook delivery remains unverified. See [Phase 3 usage, evidence and limits](docs/PHASE3_CODEX_LIFECYCLE.md). [Context protocol v1](docs/CONTEXT_PROTOCOL.md), [the earlier readiness milestone](docs/CODEX_READINESS.md), [Phase 2 verification](docs/PHASE2_RELIABILITY.md) and [the Phase 1 audit](docs/FOUNDATION_AUDIT.md) document the foundation. Schema 3 and dependencies remain unchanged. Linux execution and automated dependency advisory scanning remain unverified.
 
 ## Build and verify
+
+For portable Windows packaging, run the deterministic verification below, then:
+
+```powershell
+node .\scripts\build-windows.cjs .\.build\windows-release --test
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1 `
+  -Binary .\.build\windows-release\swapctx.exe `
+  -BuildInfo .\.build\windows-release\build-info.json `
+  -Destination .\.build\windows-candidate
+```
+
+The destination must be new and its parent must exist. This creates a ZIP,
+an offline `install-windows.ps1`, and SHA256SUMS.txt from the existing release binary, with an internal file-hash
+manifest and a [self-contained Windows quickstart](docs/WINDOWS_RELEASE.md).
+Packaging does not build or certify the binary; always verify the current source
+first. It includes no working database, credentials, logs or test reports.
+Checksums detect corruption but do not authenticate the publisher. The package
+is an unsigned local candidate; dependency redistribution review, advisory
+audit, hosted CI and clean-machine validation remain release gates.
+Cargo metadata now matches the repository's existing Apache-2.0 LICENSE.
+
+The offline Windows release recipe compares two isolated builds, links the C
+runtime statically, and records source hashes plus PE imports. The same-machine
+comparison has passed; cross-machine reproducibility remains unverified. Direct
+`cargo build --release` remains supported for development and may require the VC
+runtime. See [release build and command discovery](docs/RELEASE_BUILD_READINESS.md)
+for prerequisites, results, session PATH setup and current preview blockers.
+
+The archive also includes generated third-party notice texts verified against
+Cargo.lock. See [preview distribution hardening](docs/PREVIEW_DISTRIBUTION.md)
+for installation, notice regeneration and the remaining release gates.
 
 Install Rust and Microsoft C++ Build Tools with the **Desktop development with C++** workload. Bundled SQLite requires a C compiler. From the folder containing `Cargo.toml`:
 
@@ -29,11 +70,13 @@ The fail-fast Windows script also discovers an exact-version compiler installed 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify.ps1 -ReleaseTests -Benchmark
 # With cached dependencies, add -Offline; select a cache with -CargoHome.
+# Offline deterministic checks only, rejecting agent options and skipping soak checks:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify.ps1 -DeterministicOnly -ReleaseTests
 ```
 
 The execution-policy argument applies only to that process. The benchmark is optional and ignored during ordinary tests. Windows/Linux CI and an online `cargo audit` job are supplied but have not run here. Publish the source folder at repository root so GitHub discovers `.github/workflows/ci.yml`.
 
-Optional Node.js 24 contract checks: `node scripts/check-sql.cjs`, `node scripts/check-context.cjs target/release/swapctx.exe` and `node scripts/check-session.cjs target/release/swapctx.exe`, or add `-ContextTests` to verification. Add `-CodexPath 'C:\absolute\codex.exe'` for the isolated loopback Codex 0.162.1 acceptance suites. `-ModelTests` additionally opts into the separate real-provider context-use evaluation using generated probe data and Codex's configured authentication. These checks supplement native tests. Node is only a runtime dependency of the optional Codex adapters; ordinary Rust memory commands remain standalone.
+Optional Node.js 24 contract checks: `node scripts/check-sql.cjs`, `node scripts/check-context.cjs target/release/swapctx.exe`, `node scripts/check-session.cjs target/release/swapctx.exe` and `node scripts/check-everyday.cjs target/release/swapctx.exe`, or add `-ContextTests` to verification. Add `-CodexPath 'C:\absolute\codex.exe'` for the isolated loopback Codex 0.162.1 acceptance suites. `-ModelTests` additionally opts into the separate real-provider context-use evaluation using generated probe data and Codex's configured authentication. These checks supplement native tests. Node is only a runtime dependency of the optional Codex adapters; ordinary Rust memory commands remain standalone. `-DeterministicOnly` forbids all agent-test options.
 
 `-ContextTests` also runs `scripts/check-pilot-harness.cjs` without provider requests. Explicit `-PilotTests -CodexPath 'C:\absolute\codex.exe'` adds the authenticated disposable coding pilot. See [pilot instructions and blocked evidence](docs/REAL_WORLD_CODEX_PILOT.md).
 
@@ -52,11 +95,13 @@ For the managed console, from a registered project or a nested directory:
 
 ```powershell
 & 'C:\path\to\swapctx.exe' codex setup --codex 'C:\absolute\path\to\codex.exe'
-& 'C:\path\to\swapctx.exe' codex doctor
-& 'C:\path\to\swapctx.exe' codex run
+& 'C:\path\to\swapctx.exe' codex status
+& 'C:\path\to\swapctx.exe' codex run --observe
+# In a second terminal within the same registered project:
+& 'C:\path\to\swapctx.exe' codex watch
 ```
 
-This optional console requires Node 24+ and Codex 0.162.1. It resumes the project's saved managed thread and refreshes selected context before each turn. Use `/context`, `/query WORDS`, `/compact`, `/new` and `/exit`; `run --new` starts another thread while preserving the previous reference. Read-only is the default. Setup leaves native Codex configuration and hooks unchanged. Ordinary `codex` launches do not activate this integration. See [managed console details](docs/PHASE3_CODEX_LIFECYCLE.md) before enabling workspace writes.
+This optional console requires Node 24+ and Codex 0.162.1. It resumes the project's saved managed thread and refreshes selected context before each turn. `/help` lists local memory, status and observation commands. `run --new` starts another thread while preserving the previous reference. Read-only is the default; setup's `--workspace-write --replace` explicitly enables editing, and optional `--codex-home ABSOLUTE_DIRECTORY` selects an existing native home. Setup leaves native Codex configuration and hooks unchanged. Ordinary `codex` launches do not activate this integration. See [everyday usage and limits](docs/PHASE5_EVERYDAY_CODEX.md). `codex status` and `codex watch` are local-only; `codex doctor` starts Codex without a model request.
 
 ## Use
 
@@ -141,4 +186,4 @@ Transfer limits: 256 MiB input file, 100,000 rows and 64 MiB decoded values per 
 
 Storage/backup is plaintext and inherits local permissions. No secure ACL provisioning, tamper resistance, credential discovery, project scanning or automatic history ingestion exists. The Rust CLI has no AI/network client. Optional Codex adapters supply external records to Codex; Codex retains its own network/logging behavior. Delivery does not guarantee requirements will be followed. Memory backup/export does not include Codex adapter settings/session references or native Codex conversation history.
 
-Complete online advisory audit and cross-platform CI before production release clearance. The managed console has a successful short authenticated pilot on the tested versions and is ready for an extended opt-in pilot. Natural automatic recovery and measured comparative benefit still need real-provider verification. Native TUI lifecycle delivery and tool protection remain unverified. See the [Phase 4 readiness decision](docs/PHASE4_LONG_SESSIONS.md#verification-and-readiness).
+Complete online advisory audit and cross-platform CI before production release clearance. The managed console has prior authenticated pilot evidence and Phase 5 offline regression coverage for opt-in everyday use on the pinned setup. Natural automatic recovery and measured comparative benefit remain unverified. Native TUI lifecycle delivery and tool protection remain unverified. See the [current readiness decision](docs/PHASE5_EVERYDAY_CODEX.md#verification-and-readiness); no additional expensive evaluation was run for this milestone.

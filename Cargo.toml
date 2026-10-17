@@ -3,7 +3,7 @@ name = "swapctx"
 version = "0.1.0"
 edition = "2021"
 description = "Local-first context records and project protection rules for coding agents"
-license = "MIT"
+license = "Apache-2.0"
 
 [dependencies]
 anyhow = "1"

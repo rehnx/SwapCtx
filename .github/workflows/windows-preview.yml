@@ -1,0 +1,43 @@
+name: Windows preview preparation (manual, no publication)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-preview:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Locate source
+        run: |
+          if (Test-Path Cargo.toml) { 'CRATE_DIR=.' >> $env:GITHUB_ENV }
+          elseif (Test-Path SwapCtx/Cargo.toml) { 'CRATE_DIR=SwapCtx' >> $env:GITHUB_ENV }
+          else { throw 'Cannot locate Cargo.toml' }
+      # Network provisioning is separate from the offline checks below.
+      # This workflow is prepared locally; it has not been dispatched here.
+      - name: Provision pinned toolchain and dependency cache
+        working-directory: ${{ env.CRATE_DIR }}
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
+          if ($LASTEXITCODE -ne 0) { throw 'Toolchain installation failed' }
+          cargo fetch --locked --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency cache provisioning failed' }
+      - name: Build and verify candidate offline
+        working-directory: ${{ env.CRATE_DIR }}
+        run: |
+          New-Item -ItemType Directory -Force .build | Out-Null
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/prepare-preview.ps1 -Destination .build/hosted-preview
+          if ($LASTEXITCODE -ne 0) { throw 'Preview gates failed' }
+      - name: Display local candidate evidence
+        working-directory: ${{ env.CRATE_DIR }}
+        run: |
+          Get-Content .build/hosted-preview/SHA256SUMS.txt
+          Get-Content .build/hosted-preview/windows-acceptance.json
+          Get-Content .build/hosted-preview/release-checks.json
+      # No upload, release, package submission, commit or push step.

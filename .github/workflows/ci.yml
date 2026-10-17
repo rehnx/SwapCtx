@@ -50,6 +50,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Context checks failed' }
           node scripts/check-session.cjs $taskExecutable
           if ($LASTEXITCODE -ne 0) { throw 'Session transport checks failed' }
+          node scripts/check-everyday.cjs $taskExecutable
+          if ($LASTEXITCODE -ne 0) { throw 'Everyday integration checks failed' }
+          if ($IsWindows) {
+            node scripts/third-party.cjs --check
+            if ($LASTEXITCODE -ne 0) { throw 'Third-party notices are stale' }
+            node scripts/check-package.cjs $taskExecutable
+            if ($LASTEXITCODE -ne 0) { throw 'Windows package checks failed' }
+            node scripts/check-release.cjs $taskExecutable
+            if ($LASTEXITCODE -ne 0) { throw 'Windows command discovery and PE checks failed' }
+          }
           node scripts/check-pilot-harness.cjs
           if ($LASTEXITCODE -ne 0) { throw 'Pilot evaluator checks failed' }
           node scripts/check-soak-harness.cjs

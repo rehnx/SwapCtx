@@ -115,6 +115,35 @@ try {
   check('5001 candidates report capped scanning, never complete delivery',()=>{
     const b=fixture('scan');b.sql(db=>{db.exec('BEGIN');const m=db.prepare("INSERT INTO memories(project_id,kind,content) VALUES(1,'note',?)");const o=db.prepare("INSERT INTO memory_origins VALUES(?,?,'manual','user',1)");const e=db.prepare("INSERT INTO memory_events(memory_id,action,detail,recorded_at) VALUES(?,'add','fixture',1)");for(let i=0;i<5001;i++){const id=Number(m.run('fact '+i).lastInsertRowid);o.run(id,id.toString(16).padStart(32,'0'));e.run(id);}db.exec('COMMIT');});const p=b.packet();assert.equal(p.scan.candidates_examined,5000);assert.equal(p.scan.truncated,true);assert.equal(p.coverage.mandatory_context_complete,false);
   });
+  check('oversized high-ranking notes do not discard smaller relevant records',()=>{
+    const b=fixture('packing');b.add('Keep the contract',['--kind','requirement']);
+    for(let i=0;i<3;i++)b.add('alpha useful note '+i);
+    b.add('alpha beta '+'.'.repeat(2800));
+    const p=b.packet(['--max-bytes','4096','--query','alpha beta']);
+    assert.equal(p.records.length,4);assert.equal(p.records[0].kind,'requirement');
+    assert.ok(p.records.slice(1).every(r=>r.content.startsWith('alpha useful note')));
+    assert.equal(p.omitted.budget,1);assert.equal(p.coverage.mandatory_context_complete,true);
+  });
+  check('record limits are applied to records that fit the complete packet budget',()=>{
+    const b=fixture('packing-limit');b.add('small useful note');b.add('.'.repeat(2800));
+    const p=b.packet(['--max-bytes','4096','--limit','1']);assert.equal(p.records.length,1);assert.equal(p.records[0].content,'small useful note');assert.equal(p.omitted.budget,1);
+  });
+  check('repeated query terms cannot outweigh distinct matches',()=>{
+    const b=fixture('distinct-terms');b.add('alpha older');b.add('beta newer');
+    const p=b.packet(['--query','alpha ALPHA beta']);assert.deepEqual(p.records.map(r=>r.content),['beta newer','alpha older']);assert.deepEqual(p.records.map(r=>r.matched_terms),[1,1]);
+  });
+  check('packing accounts for escaped Unicode, metadata digit growth, rules and whole requirements',()=>{
+    const b=fixture('escaped-packing');b.add('Preserve current behavior',['--kind','requirement']);
+    b.add('escaped '+ '\u0085\u202e'.repeat(180));
+    for(let i=0;i<12;i++)b.add('ordinary note '+i+' '+'.'.repeat(i*7));
+    b.ok(['protect','add','--path','src/**','--reason','Source changes need review','--policy','ask']);
+    for(const max of [2048,2150,2400,2800,3200,4096,8192]) {
+      const p=b.packet(['--max-bytes',String(max),'--limit','10']);assert.equal(p.boundary_rules.length,1);assert.equal(p.records[0].kind,'requirement');
+      assert.ok(Buffer.byteLength(JSON.stringify(p))<=p.budget.bytes_used);assert.equal(p.omitted.budget+p.omitted.record_limit+p.records.length,p.scan.candidates_examined);
+      assert.equal(p.coverage.mandatory_context_complete,true);assert.ok(p.records.length<=10);
+    }
+    assert.ok(b.packet(['--max-bytes','8192','--query','escaped']).records.some(r=>r.content==='escaped '+'\u0085\u202e'.repeat(180)));
+  });
   console.log(`${count} context/adapter checks passed`);
 } finally {
   // Only remove the exact directory returned by mkdtemp, under the chosen temp root.

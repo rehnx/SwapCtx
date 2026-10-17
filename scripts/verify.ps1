@@ -3,12 +3,19 @@ param(
     [switch]$ReleaseTests,
     [switch]$Benchmark,
     [switch]$ContextTests,
+    # No Codex process, provider requests, or long-session/soak tests.
+    [switch]$DeterministicOnly,
     [switch]$ModelTests,
     [switch]$PilotTests,
     [string]$CodexPath,
     [string]$CargoHome
 )
 $ErrorActionPreference = 'Stop'
+if ($DeterministicOnly) {
+    if ($CodexPath -or $ModelTests -or $PilotTests -or $Benchmark) { throw 'DeterministicOnly forbids CodexPath, ModelTests, PilotTests and Benchmark' }
+    $Offline = $true
+    $ContextTests = $true
+}
 if (($ModelTests -or $PilotTests) -and !$CodexPath) { throw 'ModelTests/PilotTests require an explicit CodexPath and use its configured model provider' }
 $taskProjectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $taskToolchainText = Get-Content -LiteralPath (Join-Path $taskProjectRoot 'rust-toolchain.toml') -Raw
@@ -58,16 +65,26 @@ try {
         $taskNodeCommand = Get-Command node -ErrorAction SilentlyContinue
         $taskNode = if ($taskNodeCommand) { $taskNodeCommand.Source } else { Join-Path $env:ProgramFiles 'nodejs/node.exe' }
         if (!(Test-Path -LiteralPath $taskNode)) { throw 'Context tests require Node.js 24 or newer' }
+        & $taskNode scripts/third-party.cjs --check
+        if ($LASTEXITCODE -ne 0) { throw 'Third-party notice verification failed' }
         & $taskNode scripts/check-sql.cjs
         if ($LASTEXITCODE -ne 0) { throw 'SQL checks failed' }
         & $taskNode scripts/check-context.cjs target/release/swapctx.exe
         if ($LASTEXITCODE -ne 0) { throw 'Context checks failed' }
         & $taskNode scripts/check-session.cjs target/release/swapctx.exe
         if ($LASTEXITCODE -ne 0) { throw 'Session transport checks failed' }
+        & $taskNode scripts/check-everyday.cjs target/release/swapctx.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Everyday integration checks failed' }
+        & $taskNode scripts/check-package.cjs target/release/swapctx.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Windows package checks failed' }
+        & $taskNode scripts/check-release.cjs target/release/swapctx.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Windows command discovery and PE checks failed' }
         & $taskNode scripts/check-pilot-harness.cjs
         if ($LASTEXITCODE -ne 0) { throw 'Pilot evaluator checks failed' }
-        & $taskNode scripts/check-soak-harness.cjs
-        if ($LASTEXITCODE -ne 0) { throw 'Long-session evaluator checks failed' }
+        if (!$DeterministicOnly) {
+            & $taskNode scripts/check-soak-harness.cjs
+            if ($LASTEXITCODE -ne 0) { throw 'Long-session evaluator checks failed' }
+        }
         if ($CodexPath) {
             & $taskNode scripts/check-codex.cjs $CodexPath target/release/swapctx.exe
             if ($LASTEXITCODE -ne 0) { throw 'Codex boundary checks failed' }

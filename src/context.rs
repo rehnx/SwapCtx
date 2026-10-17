@@ -86,7 +86,7 @@ pub fn execute(path: Result<std::path::PathBuf>, request: Request) -> u8 {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Stats {
     requirements: i64,
     rules: i64,
@@ -103,9 +103,25 @@ struct Stats {
 struct Item {
     json: String,
     requirement: bool,
+    review: bool,
+}
+// Rank lightweight identities, not thousands of potentially large JSON records.
+struct Candidate {
     score: usize,
     id: i64,
-    review: bool,
+    requirement: bool,
+    stale: bool,
+    conflict: bool,
+    unknown: bool,
+}
+
+fn remaining_stats(stats: &Stats, remaining: usize) -> Stats {
+    let mut reserved = stats.clone();
+    // Reserve the maximum future counter widths before deciding if a record fits.
+    // Only the actual counters are returned. This can leave a few bytes unused.
+    reserved.budget += remaining as i64;
+    reserved.limit += remaining as i64;
+    reserved
 }
 
 fn envelope(
@@ -181,7 +197,7 @@ pub fn packet(conn: &mut Connection, cwd: &Path, request: &Request) -> Result<St
     let (project, root) = crate::storage::project(&tx, cwd)?;
     let root = crate::paths::path_text(&root)?;
     let timestamp = crate::memory::now()?;
-    let terms = request
+    let mut terms = request
         .query
         .as_ref()
         .map(|q| {
@@ -190,6 +206,8 @@ pub fn packet(conn: &mut Connection, cwd: &Path, request: &Request) -> Result<St
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    terms.sort();
+    terms.dedup();
     let mut stats = Stats {
     requirements: tx.query_row("SELECT count(*) FROM memories m LEFT JOIN memory_metadata d ON d.memory_id=m.id WHERE m.project_id=?1 AND m.kind='requirement' COLLATE NOCASE AND coalesce(d.state,'active')='active' AND coalesce(d.validity,'valid')='valid'",[project],|r|r.get(0))?,
     inactive: tx.query_row("SELECT count(*) FROM memories m LEFT JOIN memory_metadata d ON d.memory_id=m.id WHERE m.project_id=?1 AND (coalesce(d.state,'active')!='active' OR coalesce(d.validity,'valid')!='valid')",[project],|r|r.get(0))?,
@@ -250,10 +268,10 @@ pub fn packet(conn: &mut Connection, cwd: &Path, request: &Request) -> Result<St
     } else {
         format!("({})", matches.join(" OR "))
     };
-    let sql=format!("SELECT m.id,m.kind,m.content,m.created_at,d.memory_key,d.expires_at,d.reviewed_at,o.origin_id,o.source,o.actor,o.recorded_at FROM memories m LEFT JOIN memory_metadata d ON d.memory_id=m.id JOIN memory_origins o ON o.memory_id=m.id WHERE m.project_id=?1 AND coalesce(d.state,'active')='active' AND coalesce(d.validity,'valid')='valid' AND (m.kind='requirement' COLLATE NOCASE OR {relevance}) ORDER BY (m.kind='requirement' COLLATE NOCASE) DESC,m.id DESC LIMIT 5001");
+    let sql=format!("SELECT m.id,m.kind,m.content,m.created_at,d.memory_key,d.expires_at,o.source,o.actor FROM memories m LEFT JOIN memory_metadata d ON d.memory_id=m.id JOIN memory_origins o ON o.memory_id=m.id WHERE m.project_id=?1 AND coalesce(d.state,'active')='active' AND coalesce(d.validity,'valid')='valid' AND (m.kind='requirement' COLLATE NOCASE OR {relevance}) ORDER BY (m.kind='requirement' COLLATE NOCASE) DESC,m.id DESC LIMIT 5001");
     let mut stmt = tx.prepare(&sql)?;
     let mut cursor = stmt.query(params_from_iter(values))?;
-    let mut selected = Vec::new();
+    let mut candidates = Vec::new();
     while let Some(row) = cursor.next()? {
         if stats.scanned == 5000 {
             stats.scan_limited = true;
@@ -266,11 +284,8 @@ pub fn packet(conn: &mut Connection, cwd: &Path, request: &Request) -> Result<St
         let created: String = row.get(3)?;
         let key: Option<String> = row.get(4)?;
         let expires: Option<i64> = row.get(5)?;
-        let reviewed: Option<i64> = row.get(6)?;
-        let origin: String = row.get(7)?;
-        let source: String = row.get(8)?;
-        let actor: String = row.get(9)?;
-        let registered: i64 = row.get(10)?;
+        let source: String = row.get(6)?;
+        let actor: String = row.get(7)?;
         let stale = expires.is_some_and(|e| e <= timestamp);
         let conflict = key.as_ref().is_some_and(|k| competing.contains_key(k));
         let unknown = source == "legacy-unknown" || actor == "unknown";
@@ -316,37 +331,104 @@ pub fn packet(conn: &mut Connection, cwd: &Path, request: &Request) -> Result<St
             .filter(|t| searchable.contains(t.as_str()))
             .count();
         let requirement = kind.eq_ignore_ascii_case("requirement");
-        let json:String=tx.query_row("SELECT json_object('id',CAST(?1 AS TEXT),'kind',?2,'content',?3,'created_at',?4,'key',?5,'expires_unix',?6,'reviewed_unix',?7,'origin',json_object('id',?8,'source',?9,'actor',?10,'registered_unix',?11,'authenticated',json('false')),'freshness',?12,'conflicted',json(?13),'provenance_status',?14,'matched_terms',?15,'selection_reason',?16)",params![id,kind,content,created,key,expires,reviewed,origin,source,actor,registered,if stale {"stale"} else {"fresh"},conflict.to_string(),if unknown {"unknown"} else {"self_reported"},score as i64,if requirement {"project_requirement"} else if terms.is_empty() {"recent"} else {"query_terms"}],|r|r.get(0))?;
-        selected.push(Item {
-            json,
+        candidates.push(Candidate {
             requirement,
             score,
             id,
-            review: stale || conflict || unknown,
+            stale,
+            conflict,
+            unknown,
         });
-        selected.sort_by_key(|r| std::cmp::Reverse((r.requirement, r.score, r.id)));
-        if selected.len() > request.limit as usize {
-            selected.pop();
-            stats.limit += 1;
-        }
     }
     drop(cursor);
     drop(stmt);
-    // Rules and requirements have priority over optional notes. Entire records only.
-    loop {
-        let output = sized(&tx, root, request, timestamp, &stats, &selected, &rules)?;
-        if output.len() < request.max_bytes as usize {
-            tx.commit()?;
-            return Ok(output);
+    candidates.sort_unstable_by_key(|r| std::cmp::Reverse((r.requirement, r.score, r.id)));
+    let mut selected = Vec::new();
+    // Rules retain priority. Reserve future omission-counter widths before packing.
+    while sized(
+        &tx,
+        root,
+        request,
+        timestamp,
+        &remaining_stats(&stats, candidates.len()),
+        &selected,
+        &rules,
+    )?
+    .len()
+        >= request.max_bytes as usize
+    {
+        if rules.pop().is_none() {
+            bail!("Budget too small for metadata");
         }
-        if selected.pop().is_some() {
-            stats.budget += 1;
-            continue;
-        }
-        if rules.pop().is_some() {
-            stats.budget += 1;
-            continue;
-        }
-        bail!("Budget too small for metadata")
+        stats.budget += 1;
     }
+    // An empty envelope is a lower bound for every subsequent packet (except the
+    // one-byte false -> true coverage change). Quickly skip obvious non-fits.
+    let minimum = envelope(&tx, root, request, timestamp, &stats, (&[], &rules), 0)?
+        .len()
+        .saturating_sub(1);
+    let mut payload_bytes = 0;
+    let mut encode = tx.prepare("SELECT json_object('id',CAST(m.id AS TEXT),'kind',m.kind,'content',m.content,'created_at',m.created_at,'key',d.memory_key,'expires_unix',d.expires_at,'reviewed_unix',d.reviewed_at,'origin',json_object('id',o.origin_id,'source',o.source,'actor',o.actor,'registered_unix',o.recorded_at,'authenticated',json('false')),'freshness',?3,'conflicted',json(?4),'provenance_status',?5,'matched_terms',?6,'selection_reason',?7) FROM memories m LEFT JOIN memory_metadata d ON d.memory_id=m.id JOIN memory_origins o ON o.memory_id=m.id WHERE m.id=?1 AND m.project_id=?2")?;
+    for (index, candidate) in candidates.iter().enumerate() {
+        let remaining = candidates.len() - index;
+        if selected.len() == request.limit as usize {
+            stats.limit += remaining as i64;
+            break;
+        }
+        // Re-read only candidate values needed for packing, within the SAME snapshot.
+        let json = safe_json(encode.query_row(
+            params![
+                candidate.id,
+                project,
+                if candidate.stale { "stale" } else { "fresh" },
+                candidate.conflict.to_string(),
+                if candidate.unknown {
+                    "unknown"
+                } else {
+                    "self_reported"
+                },
+                candidate.score as i64,
+                if candidate.requirement {
+                    "project_requirement"
+                } else if terms.is_empty() {
+                    "recent"
+                } else {
+                    "query_terms"
+                }
+            ],
+            |r| r.get(0),
+        )?);
+        let added_bytes = json.len() + usize::from(!selected.is_empty());
+        if minimum + payload_bytes + added_bytes >= request.max_bytes as usize {
+            stats.budget += 1;
+            continue;
+        }
+        selected.push(Item {
+            json,
+            requirement: candidate.requirement,
+            review: candidate.stale || candidate.conflict || candidate.unknown,
+        });
+        let reserved_packet = sized(
+            &tx,
+            root,
+            request,
+            timestamp,
+            &remaining_stats(&stats, remaining),
+            &selected,
+            &rules,
+        )?;
+        if reserved_packet.len() < request.max_bytes as usize {
+            payload_bytes += added_bytes;
+        } else {
+            selected.pop();
+            stats.budget += 1;
+        }
+    }
+    drop(encode);
+    let output = sized(&tx, root, request, timestamp, &stats, &selected, &rules)?;
+    if output.len() >= request.max_bytes as usize {
+        bail!("Budget accounting failed");
+    }
+    tx.commit()?;
+    Ok(output)
 }

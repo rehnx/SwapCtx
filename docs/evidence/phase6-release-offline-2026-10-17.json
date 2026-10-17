@@ -1,0 +1,89 @@
+{
+  "date": "2026-10-17",
+  "scope": "Phase 6 offline release preparation and development-tool-free core acceptance",
+  "build": {
+    "command": "node scripts/build-windows.cjs .build/phase6-release --test",
+    "exit_code": 0,
+    "log": ".build/phase6-build.log",
+    "fresh_source_and_target_pairs": 2,
+    "matching_binary_sha256": "fd00664eb90dc8a4f26e0253f0b267e1e62feb77d98ad65f79821ea88a44ab2a",
+    "native_static_release_passed": 47,
+    "benchmark": "ignored, not run",
+    "dynamic_crt_imports": [],
+    "helper_hashes_recorded": ["scripts/build-windows.cjs", "scripts/inspect-pe.cjs", "scripts/release-inputs.cjs"]
+  },
+  "preparation": {
+    "command": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/prepare-preview.ps1 -Destination .build/phase6-preview -ExistingBuild .build/phase6-release",
+    "exit_code": 0,
+    "log": ".build/phase6-preview-preparation.log",
+    "existing_build_reused": true,
+    "fresh_default_orchestration_branch": "Prepared but not exercised as one combined run; its build component ran separately with matching binaries and native tests",
+    "foundation": {
+      "fmt_clippy_release_build": "passed",
+      "native_debug": 47,
+      "native_release": 47,
+      "schema": 10,
+      "context": 23,
+      "session_transport": 23,
+      "everyday": 27,
+      "package_installation": 14,
+      "pe_command_discovery": 4,
+      "pilot_oracle_fixtures_only": 12,
+      "third_party_notice_regeneration": "passed; 49 Windows packages"
+    },
+    "static_candidate_regressions": {
+      "context": 23,
+      "session_transport": 23,
+      "everyday": 27,
+      "package_installation": 14,
+      "pe_command_discovery": 4,
+      "receipt_regressions": 7
+    },
+    "recipient_acceptance": {
+      "script": "test-windows-preview.ps1",
+      "passed": 16,
+      "windows_version": "10.0.26300.0",
+      "powershell_version": "5.1.26100.9711",
+      "node_cargo_rustc_codex_absent_from_test_path": true,
+      "isolated_default_localappdata": true,
+      "bare_command_nested_scope_backup_restore": "passed",
+      "limits": "Same development OS with restricted PATH; tools were not uninstalled and no clean user account or persistent PATH was tested"
+    },
+    "extra_preservation_check": "Preparation refuses existing candidate and all existing file hashes remain unchanged"
+  },
+  "candidate": {
+    "directory": ".build/phase6-preview",
+    "sha256": {
+      "swapctx-0.1.0-windows-x64.zip": "c8fd264c76c8ff6790fd90c02af9c23cd847c2c9d92731e56d3ad7ee79fb09e2",
+      "install-windows.ps1": "707f206f66128b9f55403ee2a03dd83b01c927335b904519260b7ae78283c2f8",
+      "test-windows-preview.ps1": "295112bc3b3cb86c7a7f81711212662a14b10d42da558798b1e500042a822c54",
+      "build-info.json": "8e54c46ef1eb51fa72aacd402dcf3570c0667b1f8e912396ca9fe00304bf6800",
+      "windows-acceptance.json": "652b870d5ca0ba82dc789bc4f87f4247c2d468d612f496f9e2a3158fc6928469",
+      "release-checks.json": "0f5e3e6f3e1b85cfa79eb1428fab78c7da48ec453ab8ffcbe12fe98e0188e92e"
+    },
+    "packaged_quickstart_matches_current_source": true,
+    "signed": false,
+    "published": false
+  },
+  "remaining_approval_actions": [
+    "Choose supported Windows x64 versions; run shipped script on clean machines/accounts and test downloaded-file behavior",
+    "Verify persistent user PATH and fresh-terminal discovery; no registry or profile mutation performed locally",
+    "Approve remote changes before running manual hosted preparation/foundation/advisory workflows; none dispatched",
+    "Complete current advisory scan and human review of dependency/static-runtime redistribution obligations",
+    "Finalize publisher identity, trusted download channel and unsigned-preview/signing decision",
+    "Approve exact candidate hashes for publication; no package-manager identifier or manifest submitted"
+  ],
+  "broader_limits": [
+    "Same-machine repeatability only; cross-host/toolchain/SDK/cache-location reproducibility unverified",
+    "Unsigned receipts and checksums are consistency checks, not authenticated provenance",
+    "Optional Codex adapter still requires its documented Node/Codex runtimes",
+    "Temporary-cwd PowerShell access limitation remains unverified outside this managed environment"
+  ],
+  "model_calls": 0,
+  "codex_processes": 0,
+  "external_ai_agents": 0,
+  "soak_evaluations": 0,
+  "remote_mutations": 0,
+  "persistent_user_path_changes": 0,
+  "user_data_modified": false
+}

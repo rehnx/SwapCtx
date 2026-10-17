@@ -1,7 +1,7 @@
 //! Optional Node/Codex adapter; embedded for a portable single CLI distribution.
 use anyhow::{bail, Context, Result};
 use clap::Subcommand;
-use std::{io::Write, path::PathBuf, process::Command};
+use std::{path::PathBuf, process::Command};
 
 #[derive(Subcommand, Debug)]
 pub enum Action {
@@ -10,6 +10,9 @@ pub enum Action {
         /// Absolute path to Codex CLI 0.162.1.
         #[arg(long)]
         codex: PathBuf,
+        /// Explicit existing Codex home; credentials remain owned by Codex.
+        #[arg(long)]
+        codex_home: Option<PathBuf>,
         /// Explicitly request Codex's workspace-write sandbox instead of read-only.
         #[arg(long)]
         workspace_write: bool,
@@ -19,6 +22,14 @@ pub enum Action {
     },
     /// Check context, version and app-server availability without model requests.
     Doctor,
+    /// Inspect saved settings and current context locally, without starting Codex.
+    Status,
+    /// Observe the opt-in local status snapshot without starting Codex.
+    Watch {
+        /// Print one snapshot and exit.
+        #[arg(long)]
+        once: bool,
+    },
     /// Remove a validated lock only when its recorded process no longer exists.
     RecoverLock,
     /// Open the managed console, resuming the project's saved managed session.
@@ -26,6 +37,9 @@ pub enum Action {
         /// Start a new thread while preserving the previous session reference.
         #[arg(long)]
         new: bool,
+        /// Publish a redacted local observatory snapshot for codex watch.
+        #[arg(long)]
+        observe: bool,
     },
 }
 
@@ -47,17 +61,21 @@ pub fn execute(database: PathBuf, node: Option<PathBuf>, json: bool, action: Act
         }
         None => PathBuf::from("node"),
     };
-    let mut script = tempfile::Builder::new()
+    let scripts = tempfile::Builder::new()
         .prefix("swapctx-codex-")
-        .suffix(".cjs")
-        .tempfile()?;
-    script.write_all(include_bytes!("../integrations/codex/session.cjs"))?;
-    script.as_file().sync_all()?;
+        .tempdir()?;
+    let script = scripts.path().join("session.cjs");
+    std::fs::write(&script, include_bytes!("../integrations/codex/session.cjs"))?;
+    std::fs::write(
+        scripts.path().join("observatory.cjs"),
+        include_bytes!("../integrations/codex/observatory.cjs"),
+    )?;
     let mut command = Command::new(node);
-    command.arg(script.path());
+    command.arg(&script);
     match action {
         Action::Setup {
             codex,
+            codex_home,
             workspace_write,
             replace,
         } => {
@@ -68,6 +86,12 @@ pub fn execute(database: PathBuf, node: Option<PathBuf>, json: bool, action: Act
                 .arg("setup")
                 .arg("--codex")
                 .arg(codex.canonicalize()?);
+            if let Some(home) = codex_home {
+                if !home.is_absolute() || !home.is_dir() {
+                    bail!("Codex home must be an absolute existing directory");
+                }
+                command.arg("--codex-home").arg(home.canonicalize()?);
+            }
             if workspace_write {
                 command.arg("--workspace-write");
             }
@@ -78,13 +102,25 @@ pub fn execute(database: PathBuf, node: Option<PathBuf>, json: bool, action: Act
         Action::Doctor => {
             command.arg("doctor");
         }
+        Action::Status => {
+            command.arg("status");
+        }
+        Action::Watch { once } => {
+            command.arg("watch");
+            if once {
+                command.arg("--once");
+            }
+        }
         Action::RecoverLock => {
             command.arg("recover-lock");
         }
-        Action::Run { new } => {
+        Action::Run { new, observe } => {
             command.arg("run");
             if new {
                 command.arg("--new");
+            }
+            if observe {
+                command.arg("--observe");
             }
         }
     }

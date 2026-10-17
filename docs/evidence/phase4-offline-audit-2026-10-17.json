@@ -1,0 +1,57 @@
+{
+  "protocol": "swapctx.phase4-audit",
+  "version": 1,
+  "offline": true,
+  "evidence": [
+    {
+      "source": "soak-20261017-033834.json",
+      "sha256": "de0f39846dcc30a1e7729deded68353fb028d0f50301f9e860fbdf1cf2ffac7f",
+      "status": "incomplete",
+      "requestedTurnsPerArm": 6,
+      "arms": {
+        "managed": {
+          "retainedTurns": 6,
+          "behaviorPasses": 6,
+          "automaticCompactions": 0,
+          "reportedSummaryConsistent": true
+        },
+        "baseline": {
+          "retainedTurns": 6,
+          "behaviorPasses": 6,
+          "automaticCompactions": 0,
+          "reportedSummaryConsistent": true
+        }
+      },
+      "pairedTurnsComplete": true,
+      "automaticRecoveryReported": false,
+      "comparativeBenefitEstablished": false
+    },
+    {
+      "source": "soak-full-20261017-035118.json",
+      "sha256": "f0a7318fd3caefcf8b42d6cf95a5668d1d5f010ed6ee4f4aeb595da9bf779a79",
+      "status": "failed",
+      "requestedTurnsPerArm": 24,
+      "arms": {
+        "managed": {
+          "retainedTurns": 21,
+          "behaviorPasses": 21,
+          "automaticCompactions": 0,
+          "reportedSummaryConsistent": true
+        },
+        "baseline": {
+          "retainedTurns": 22,
+          "behaviorPasses": 22,
+          "automaticCompactions": 0,
+          "reportedSummaryConsistent": true
+        }
+      },
+      "pairedTurnsComplete": false,
+      "automaticRecoveryReported": false,
+      "comparativeBenefitEstablished": false,
+      "failure": {
+        "code": "codex_turn_failed",
+        "rootCauseRecoverable": false
+      }
+    }
+  ]
+}
