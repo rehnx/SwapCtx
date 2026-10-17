@@ -43,6 +43,12 @@ namespace SwapCtx {
 function Resolve-ReleaseDirectory([string]$Path) {
     return [SwapCtx.ReleaseDirectoryPaths]::Resolve($Path)
 }
+function Resolve-ReleaseDirectoryKey([string]$Path) {
+    return (Resolve-ReleaseDirectory $Path).TrimEnd('\\')
+}
+function Test-ReleaseDirectoryEqual([string]$Left,[string]$Right) {
+    return [String]::Equals((Resolve-ReleaseDirectoryKey $Left),(Resolve-ReleaseDirectoryKey $Right),[StringComparison]::OrdinalIgnoreCase)
+}
 function Get-TaskSha256([string]$Path) {
     $taskHasher = [Security.Cryptography.SHA256]::Create()
     try {
@@ -124,10 +130,19 @@ try {
     Write-Output "Installed verified payload: $taskOutput"
     Write-Output 'No executable was started. No PATH or user data was changed. Publisher authentication depends on the source of your expected hash.'
     Write-Output ('To enable swapctx in this PowerShell session: $env:PATH = ''' + ($taskOutput + ';').Replace("'","''") + ''' + $env:PATH')
+} catch {
+    $taskFailure = $_
+    throw
 } finally {
-    if (Test-Path -LiteralPath $taskStage) {
-        if ((Resolve-ReleaseDirectory ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($taskStage))) -ne $taskParent)) { throw 'Refusing cleanup outside staging parent' }
-        if ((Get-Item -LiteralPath $taskStage -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Refusing cleanup of redirected staging directory' }
-        Remove-Item -LiteralPath $taskStage -Recurse -Force
+    try {
+        if (Test-Path -LiteralPath $taskStage) {
+            $taskActualParent = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($taskStage))
+            if (-not (Test-ReleaseDirectoryEqual $taskActualParent $taskParent)) { throw "Refusing cleanup outside staging parent: actual '$(Resolve-ReleaseDirectory $taskActualParent)', expected '$(Resolve-ReleaseDirectory $taskParent)'" }
+            if ((Get-Item -LiteralPath $taskStage -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Refusing cleanup of redirected staging directory' }
+            Remove-Item -LiteralPath $taskStage -Recurse -Force
+        }
+    } catch {
+        if ($taskFailure) { [Console]::Error.WriteLine('Additional cleanup failure (original error retained): ' + $_.Exception.Message) }
+        else { throw }
     }
 }
