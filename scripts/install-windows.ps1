@@ -44,7 +44,7 @@ function Resolve-ReleaseDirectory([string]$Path) {
     return [SwapCtx.ReleaseDirectoryPaths]::Resolve($Path)
 }
 function Resolve-ReleaseDirectoryKey([string]$Path) {
-    return (Resolve-ReleaseDirectory $Path).TrimEnd('\\')
+    return (Resolve-ReleaseDirectory $Path).TrimEnd('\')
 }
 function Test-ReleaseDirectoryEqual([string]$Left,[string]$Right) {
     return [String]::Equals((Resolve-ReleaseDirectoryKey $Left),(Resolve-ReleaseDirectoryKey $Right),[StringComparison]::OrdinalIgnoreCase)
