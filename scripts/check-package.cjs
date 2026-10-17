@@ -137,7 +137,9 @@ test('packaging does not depend on Get-FileHash cmdlet availability', () => {
   fs.mkdirSync(path.join(source,'scripts'),{recursive:true});
   fs.mkdirSync(path.join(source,'docs'));
   const original = fs.readFileSync(script,'utf8');
-  fs.writeFileSync(path.join(source,'scripts/package-windows.ps1'), "function Get-FileHash { throw 'GET_FILE_HASH_SHOULD_NOT_BE_CALLED' }\n" + original);
+  const insertionPoint = 'Set-StrictMode -Version Latest';
+  assert.ok(original.includes(insertionPoint), 'PowerShell script strict-mode marker must remain present');
+  fs.writeFileSync(path.join(source,'scripts/package-windows.ps1'), original.replace(insertionPoint, insertionPoint + "\nfunction Get-FileHash { throw 'GET_FILE_HASH_SHOULD_NOT_BE_CALLED' }"));
   fs.copyFileSync(path.join(__dirname,'install-windows.ps1'),path.join(source,'scripts/install-windows.ps1'));
   fs.copyFileSync(path.join(__dirname,'test-windows-preview.ps1'),path.join(source,'scripts/test-windows-preview.ps1'));
   for (const name of ['Cargo.toml','Cargo.lock','LICENSE','THIRD_PARTY_NOTICES.txt']) fs.copyFileSync(path.join(__dirname,'..',name),path.join(source,name));
