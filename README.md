@@ -4,6 +4,17 @@ Local-first external context records and manual project boundary checks. Rust CL
 
 SwapCtx preserves requirements, decisions, notes, and rules that you explicitly save. It provides versioned JSON context, an optional managed Codex console, and a context-first exec launcher. It does **not** expand native model context, inspect hidden model state, or intercept agent actions. A check is an observation at a point in time, not enforcement or authorization.
 
+## Native Codex / Claude Code launcher (development)
+
+Run `swapctx` in an interactive terminal to select **1 Codex** or **2 Claude Code**.
+For scripts or shortcuts, use `swapctx launch codex` or `swapctx launch claude`.
+Provider executables can be overridden with `--executable ABSOLUTE_PATH`.
+This directly starts the installed provider's own CLI with inherited terminal I/O,
+working directory, environment and its normal configuration. It does **not**
+automatically inject SwapCtx records or capture provider conversations. The
+separate `swapctx codex run` managed console still supports its existing context
+transport. Details: [native provider launcher](docs/NATIVE_PROVIDER_LAUNCHER.md).
+
 ## Foundation status
 
 The [Phase 7B Windows CI fix](docs/PHASE7B_WINDOWS_CI_FIX.md) addresses the hosted

@@ -7,6 +7,7 @@ mod history;
 mod memory;
 mod paths;
 mod protect;
+mod provider;
 mod sensitive;
 mod storage;
 mod transfer;
@@ -27,11 +28,17 @@ struct Cli {
     #[arg(long, global = true)]
     data_dir: Option<PathBuf>,
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    /// Launch the provider's ORIGINAL terminal UI. No automatic context injection.
+    Launch {
+        provider: provider::Provider,
+        #[arg(long)]
+        executable: Option<PathBuf>,
+    },
     /// Optional managed Codex console; requires Node 24+ and configured Codex 0.162.1.
     Codex {
         #[arg(long)]
@@ -153,6 +160,7 @@ fn capabilities() {
     println!("Enforcement: none; no operation is intercepted and no approval is granted");
     println!("Machine context: swapctx.context v1 JSON; read-only snapshot, byte budgets and mandatory coverage");
     println!("Codex: optional managed app-server console for 0.162.1; context-first exec remains available");
+    println!("Native providers: `swapctx` selector and `swapctx launch codex|claude`; terminal passthrough only, no native context injection");
     println!("Everyday console: explicit memory saves, optional Codex home, local-only status and opt-in redacted observatory");
     println!("Lifecycle: startup/resume/manual compaction passed a prior real-model pilot; natural automatic recovery unverified");
     println!("Native Codex hooks: delivery unverified; no automatic memory capture or tool-policy enforcement");
@@ -161,7 +169,27 @@ fn capabilities() {
     println!("Rust network clients and telemetry: none; optional Codex commands use Codex's configured provider and history");
 }
 
+/// Retain all existing command semantics; the native selector does not access storage.
+struct ParsedCommand {
+    data_dir: Option<PathBuf>,
+    command: Command,
+}
+
 fn run(cli: Cli) -> Result<u8> {
+    match cli.command {
+        None => provider::select_and_launch(),
+        Some(Command::Launch {
+            provider,
+            executable,
+        }) => provider::launch(provider, executable),
+        Some(command) => run_existing(ParsedCommand {
+            data_dir: cli.data_dir,
+            command,
+        }),
+    }
+}
+
+fn run_existing(cli: ParsedCommand) -> Result<u8> {
     if let Command::Codex { node, json, action } = cli.command {
         return codex::execute(storage_path(cli.data_dir)?, node, json, action);
     }
