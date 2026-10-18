@@ -13,7 +13,7 @@ function inputs(root) {
       else if (/\.(rs|sql|cjs)$/.test(name)) files.push(name);
     }
   }
-  for (const dir of ['src','tests','integrations/codex']) collect(dir);
+  for (const dir of ['src','tests','integrations/codex','integrations/native']) collect(dir);
   files.sort();
   return files.map(file=>({path:file,sha256:hash(fs.readFileSync(path.join(root,file)))}));
 }

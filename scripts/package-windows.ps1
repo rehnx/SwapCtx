@@ -104,7 +104,7 @@ try {
         if ($taskReceipt.recipe_sha256 -ine (Get-TaskSha256 (Join-Path $PSScriptRoot 'build-windows.cjs'))) { throw 'Build recipe changed since receipt generation' }
         $taskSeenSources = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
         foreach ($taskSource in $taskReceipt.inputs) {
-            if ($taskSource.path -isnot [string] -or $taskSource.path -cnotmatch '^(Cargo\.(toml|lock)|rust-toolchain\.toml|(src|tests|integrations/codex)/[A-Za-z0-9_./-]+)$' -or @($taskSource.path.Split('/') | Where-Object { $_ -eq '..' }).Count -ne 0) { throw 'Unsafe source path in build receipt' }
+            if ($taskSource.path -isnot [string] -or $taskSource.path -cnotmatch '^(Cargo\.(toml|lock)|rust-toolchain\.toml|(src|tests|integrations/(codex|native))/[A-Za-z0-9_./-]+)$' -or @($taskSource.path.Split('/') | Where-Object { $_ -eq '..' }).Count -ne 0) { throw 'Unsafe source path in build receipt' }
             if (!$taskSeenSources.Add($taskSource.path) -or $taskSource.sha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Invalid source entry in build receipt' }
             if ($taskSource.sha256 -ine (Get-TaskSha256 (Join-Path $taskRoot $taskSource.path))) { throw 'Source changed since release build; rebuild before packaging' }
         }

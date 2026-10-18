@@ -6,6 +6,15 @@ commands need only swapctx.exe. The optional managed console additionally needs
 Node.js 24+ and Codex CLI 0.162.1; it sends selected context to your configured
 Codex provider when you explicitly run it.
 
+The binary also supports `swapctx native codex` and `swapctx native claude`,
+which launch the installed provider's original UI. Bare `swapctx` opens a provider
+selector in an interactive terminal. Memory exposure is off by default. Optional
+`--context` requires Node.js 24+ and a provider advertising the required hook or
+plugin interface; older versions fall back to ordinary native launching. This
+adapter is offline-tested only, with native receipt/adherence unverified. See
+`docs/PHASE8_NATIVE_PROVIDERS.md` in the source repository for native setup and
+limitations. No provider is bundled or authenticated by SwapCtx.
+
 Before extraction, compare `Get-FileHash .\swapctx-0.1.0-windows-x64.zip -Algorithm SHA256`
 with SHA256SUMS.txt from your trusted distribution channel. Inside the ZIP,
 manifest.json lists SHA-256 hashes and lengths for each payload file. These are

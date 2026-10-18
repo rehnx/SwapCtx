@@ -1,0 +1,153 @@
+{
+  "format_version": 1,
+  "phase": "8.5 targeted native integration verification",
+  "verified_date": "2026-10-18",
+  "platform": "Windows x64",
+  "verification_status": "offline_contracts_passed",
+  "node_version": "24.17.0",
+  "rust_toolchain": "1.99.0",
+  "checks": [
+    {
+      "command": "cargo fmt --check",
+      "exit_code": 0
+    },
+    {
+      "command": "cargo clippy --locked --offline --all-targets -- -D warnings",
+      "exit_code": 0
+    },
+    {
+      "command": "cargo build --locked --offline",
+      "exit_code": 0
+    },
+    {
+      "command": "cargo test --locked --offline --all-targets",
+      "exit_code": 0,
+      "passed": 54,
+      "ignored": 1,
+      "note": "Existing performance test remains ignored; includes legacy provider launcher tests."
+    },
+    {
+      "command": "node scripts/check-native.cjs target/debug/swapctx.exe",
+      "exit_code": 0,
+      "passed": 27
+    },
+    {
+      "command": "node scripts/check-context.cjs target/debug/swapctx.exe",
+      "exit_code": 0,
+      "passed": 23
+    },
+    {
+      "check": "Source inventory includes native adapter and Rust launchers; include_str points to that adapter",
+      "status": "passed"
+    },
+    {
+      "check": "Historical Phase 8 evidence log hashes",
+      "status": "matched"
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0
+    }
+  ],
+  "regression_reproduction": {
+    "before_fix_failed": 5,
+    "after_fix_passed": 5,
+    "cases": [
+      "duplicate JSON keys hide rejected text",
+      "mixed-case mandatory requirement",
+      "full JSON budget plus CLI newline",
+      "broken hook stdout with misleading success receipt",
+      "Claude short continue flag rejected"
+    ]
+  },
+  "initial_source_blocker": "src/main.rs contained unresolved conflict markers; working file repaired preserving launch and native; Git index left unchanged.",
+  "logs": [
+    {
+      "path": ".build/phase85-native.stdout.log",
+      "sha256": "1b5fba259c318fb695611be6e7ce1885a1523c68caf2c3de1451d77caf58160a"
+    },
+    {
+      "path": ".build/phase85-native.stderr.log",
+      "sha256": "2d1f48e32f1c5296df1e5e96fd5b65c845f94af732e29ca05a89a97c973a2a0f"
+    },
+    {
+      "path": ".build/phase85-context.stdout.log",
+      "sha256": "05048fa924a0a8592cf6836f817731a144a5b0d387356323e784c0e5c56472ca"
+    },
+    {
+      "path": ".build/phase85-context.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "rust_results": "Observed directly from local command output; no separate Rust transcript file retained.",
+  "expected_stderr": [
+    "The native timeout fixture emits hook_input_timeout. PowerShell 5 wraps redirected native stderr as NativeCommandError text; the test process exited 0."
+  ],
+  "binary": {
+    "path": "target/debug/swapctx.exe",
+    "bytes": 7698944,
+    "sha256": "09999b898edf3eeea2dff09aa39989b5c15931c8e542bdc29e8bf3eeb6e3f45d",
+    "kind": "Development debug build; not a portable release candidate"
+  },
+  "source_files": [
+    {
+      "path": "src/main.rs",
+      "sha256": "41876db19d423af30ae1407f6c1cdd6d9899ace0563f41f46661c13787b306cd"
+    },
+    {
+      "path": "src/native.rs",
+      "sha256": "63f29653c52eec561d462afed4b561c3171688c38afa9ab3c6ae7ae92fa1b003"
+    },
+    {
+      "path": "src/provider.rs",
+      "sha256": "3f2273a563528dc4dd22a7c081165fb09d405f6a903f5279de166c0d1bb74b4d"
+    },
+    {
+      "path": "integrations/native/native.cjs",
+      "sha256": "9e8b76865631fa6450b6dc5c6fdcb97a59becf9c5c197c6eed50d76fc5661338"
+    },
+    {
+      "path": "scripts/check-native.cjs",
+      "sha256": "3811cab8dde17fa7aff09ab5d00c65d702754a8adb113bc95a3cdaaeb00ecc4e"
+    },
+    {
+      "path": "docs/PHASE8_NATIVE_PROVIDERS.md",
+      "sha256": "0b5036e1e795a55373cfc70dcaf123cb598cde3eb79e7388d7de5c3ea613d304"
+    },
+    {
+      "path": "docs/PHASE8_5_NATIVE_VERIFICATION.md",
+      "sha256": "5e64daa858605f6fd48a2e6632aefdfada4656e7dc73e0cec57ebbb5098547a0"
+    }
+  ],
+  "official_contract_sources": [
+    "https://learn.chatgpt.com/docs/hooks",
+    "https://code.claude.com/docs/en/hooks",
+    "https://code.claude.com/docs/en/cli-reference",
+    "https://code.claude.com/docs/en/plugins/security"
+  ],
+  "provider_versions": {
+    "certified": [],
+    "codex_admission": "Recognized semver and help advertising config plus hook trust flag; no exact version verified.",
+    "claude_admission": "2.1.296+ within major 2 and --plugin-dir in help; implementation floor only, not a substantiated upstream minimum or verified range."
+  },
+  "actual_provider_processes_started": 0,
+  "real_model_calls": 0,
+  "authenticated_agent_sessions": 0,
+  "soak_evaluations": 0,
+  "portable_distribution_rebuilt": false,
+  "sqlite_schema": 3,
+  "context_protocol_version": 1,
+  "dependencies_changed": false,
+  "unverified": [
+    "Real provider configuration loading, trust and lifecycle callback scheduling",
+    "Provider receipt and model adherence",
+    "Exact supported native provider releases",
+    "Full positive Rust/probe/provider configuration-loader path",
+    "Hard-termination cleanup and natural compaction recovery",
+    "Clean-machine and hosted acceptance; no package rebuild or recertification"
+  ],
+  "phase9_readiness": "Ready as an offline-tested foundation only; not certified for live provider delivery or public release.",
+  "git_index_resolved": false,
+  "committed": false,
+  "published": false
+}

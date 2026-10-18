@@ -17,6 +17,13 @@ transport. Details: [native provider launcher](docs/NATIVE_PROVIDER_LAUNCHER.md)
 
 ## Foundation status
 
+[Phase 8 native provider launching](docs/PHASE8_NATIVE_PROVIDERS.md) adds an
+interactive provider selector (`swapctx`) and `swapctx native codex|claude`.
+Both open the original provider UI. Optional `--context` uses capability-gated,
+read-only lifecycle adapters without modifying provider settings or instruction
+files. Adapter contracts are tested offline; native provider execution and model
+receipt/adherence have not been verified in this phase.
+
 The [Phase 7B Windows CI fix](docs/PHASE7B_WINDOWS_CI_FIX.md) addresses the hosted
 staging-path alias failure and misleading cascading ZIP errors. Containment and
 integrity checks are retained; the fix is offline-verified and awaits a hosted

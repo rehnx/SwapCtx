@@ -5,6 +5,7 @@ mod context;
 mod display;
 mod history;
 mod memory;
+mod native;
 mod paths;
 mod protect;
 mod provider;
@@ -38,6 +39,11 @@ enum Command {
         provider: provider::Provider,
         #[arg(long)]
         executable: Option<PathBuf>,
+    },
+    /// Launch a provider's original terminal UI; context delivery is opt-in.
+    Native {
+        #[command(flatten)]
+        options: native::Options,
     },
     /// Optional managed Codex console; requires Node 24+ and configured Codex 0.162.1.
     Codex {
@@ -160,49 +166,44 @@ fn capabilities() {
     println!("Enforcement: none; no operation is intercepted and no approval is granted");
     println!("Machine context: swapctx.context v1 JSON; read-only snapshot, byte budgets and mandatory coverage");
     println!("Codex: optional managed app-server console for 0.162.1; context-first exec remains available");
-    println!("Native providers: `swapctx` selector and `swapctx launch codex|claude`; terminal passthrough only, no native context injection");
+    println!("Legacy native launch: swapctx launch codex|claude; terminal passthrough only, no context injection");
     println!("Everyday console: explicit memory saves, optional Codex home, local-only status and opt-in redacted observatory");
     println!("Lifecycle: startup/resume/manual compaction passed a prior real-model pilot; natural automatic recovery unverified");
-    println!("Native Codex hooks: delivery unverified; no automatic memory capture or tool-policy enforcement");
+    println!("Native UIs: swapctx native codex|claude; optional --context uses capability-gated read-only SessionStart hooks");
+    println!("Native hooks: adapter output tested offline only; provider receipt/adherence unverified; no capture or enforcement");
     println!("Hidden model state: inaccessible; model use of delivered records is not guaranteed");
     println!("Sensitive values: limited heuristics and output hiding; storage is plaintext");
     println!("Rust network clients and telemetry: none; optional Codex commands use Codex's configured provider and history");
 }
 
-/// Retain all existing command semantics; the native selector does not access storage.
-struct ParsedCommand {
-    data_dir: Option<PathBuf>,
-    command: Command,
-}
-
 fn run(cli: Cli) -> Result<u8> {
-    match cli.command {
-        None => provider::select_and_launch(),
-        Some(Command::Launch {
-            provider,
-            executable,
-        }) => provider::launch(provider, executable),
-        Some(command) => run_existing(ParsedCommand {
-            data_dir: cli.data_dir,
-            command,
-        }),
+    let command = match cli.command {
+        Some(command) => command,
+        None => return native::menu(cli.data_dir),
+    };
+    if let Command::Launch {
+        provider,
+        executable,
+    } = command
+    {
+        return provider::launch(provider, executable);
     }
-}
-
-fn run_existing(cli: ParsedCommand) -> Result<u8> {
-    if let Command::Codex { node, json, action } = cli.command {
+    if let Command::Native { options } = command {
+        return native::execute(cli.data_dir, options);
+    }
+    if let Command::Codex { node, json, action } = command {
         return codex::execute(storage_path(cli.data_dir)?, node, json, action);
     }
-    if let Command::Context { request } = cli.command {
+    if let Command::Context { request } = command {
         return Ok(context::execute(storage_path(cli.data_dir), request));
     }
-    if matches!(cli.command, Command::Capabilities) {
+    if matches!(command, Command::Capabilities) {
         capabilities();
         return Ok(0);
     }
     let explicit_data_dir = cli.data_dir.is_some();
     let db_path = storage_path(cli.data_dir)?;
-    if let Command::Restore { source } = &cli.command {
+    if let Command::Restore { source } = &command {
         // The default store is never a restore target.
         if !explicit_data_dir {
             bail!("Restore requires an explicit --data-dir pointing to a new directory");
@@ -213,7 +214,7 @@ fn run_existing(cli: ParsedCommand) -> Result<u8> {
         );
         return Ok(0);
     }
-    if matches!(cli.command, Command::Privacy) {
+    if matches!(command, Command::Privacy) {
         capabilities();
         println!("Storage: {}", safe(&db_path.display().to_string()));
         println!("Data is NOT encrypted at rest. Local account permissions apply.");
@@ -223,9 +224,9 @@ fn run_existing(cli: ParsedCommand) -> Result<u8> {
         );
         return Ok(0);
     }
-    let create = matches!(cli.command, Command::Init);
+    let create = matches!(command, Command::Init);
     let writable = create
-        || match &cli.command {
+        || match &command {
             Command::Protect { action } => action.writable(),
             Command::Memory { action } => action.writable(),
             Command::Import { apply, .. } => *apply,
@@ -235,7 +236,7 @@ fn run_existing(cli: ParsedCommand) -> Result<u8> {
     let cwd = env::current_dir()?
         .canonicalize()
         .context("Cannot resolve current directory")?;
-    if let Command::Backup { destination } = &cli.command {
+    if let Command::Backup { destination } = &command {
         backup::snapshot(&conn, destination)?;
         println!(
             "Verified plaintext backup: {}",
@@ -253,7 +254,7 @@ fn run_existing(cli: ParsedCommand) -> Result<u8> {
         println!("No agent integration or automatic blocking is enabled.");
         return Ok(0);
     }
-    if matches!(cli.command, Command::Doctor) {
+    if matches!(command, Command::Doctor) {
         storage::diagnose(&conn)?;
         let sqlite: String = conn.query_row("SELECT sqlite_version()", [], |r| r.get(0))?;
         println!("Database integrity: ok; foreign keys: ok; lifecycle metadata: ok");
@@ -270,7 +271,7 @@ fn run_existing(cli: ParsedCommand) -> Result<u8> {
         return Ok(0);
     }
     let (id, root) = storage::project(&conn, &cwd)?;
-    match cli.command {
+    match command {
         Command::Status => {
             let rules: i64 = conn.query_row(
                 "SELECT COUNT(*) FROM rules WHERE project_id = ?1",

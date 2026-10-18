@@ -75,6 +75,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Session transport checks failed' }
         & $taskNode scripts/check-everyday.cjs target/release/swapctx.exe
         if ($LASTEXITCODE -ne 0) { throw 'Everyday integration checks failed' }
+        & $taskNode scripts/check-native.cjs target/release/swapctx.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Native provider offline checks failed' }
         & $taskNode scripts/check-package.cjs target/release/swapctx.exe
         if ($LASTEXITCODE -ne 0) { throw 'Windows package checks failed' }
         & $taskNode scripts/check-release.cjs target/release/swapctx.exe

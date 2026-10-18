@@ -42,27 +42,27 @@ fn choice(input: &str) -> Result<Choice> {
     match input.trim().to_ascii_lowercase().as_str() {
         "1" | "codex" => Ok(Choice::Provider(Provider::Codex)),
         "2" | "claude" | "claude code" | "claude-code" => Ok(Choice::Provider(Provider::Claude)),
-        "q" | "quit" | "exit" => Ok(Choice::Quit),
+        "" | "q" | "quit" | "exit" => Ok(Choice::Quit),
         _ => bail!("Choose 1 (Codex), 2 (Claude Code), or q (quit)"),
     }
 }
 
 /// No arguments launches only in a real terminal; piping to it must not launch an agent.
-pub fn select_and_launch() -> Result<u8> {
+pub fn select_and_launch(launch: impl FnOnce(Provider) -> Result<u8>) -> Result<u8> {
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         bail!("Provider selection needs an interactive terminal; use `swapctx launch codex` or `swapctx launch claude`");
     }
     println!("SwapCtx — choose your coding agent\n");
     println!("  1  Codex");
     println!("  2  Claude Code");
-    println!("  q  Quit\n");
+    println!("  q  Quit (or press Enter)\n");
     print!("Select: ");
     io::stdout().flush()?;
     let mut answer = String::new();
     io::stdin().read_line(&mut answer)?;
     match choice(&answer)? {
         Choice::Quit => Ok(0),
-        Choice::Provider(provider) => launch(provider, None),
+        Choice::Provider(provider) => launch(provider),
     }
 }
 
@@ -163,7 +163,7 @@ mod tests {
             Choice::Provider(Provider::Claude)
         );
         assert_eq!(choice("q").unwrap(), Choice::Quit);
-        assert!(choice("").is_err());
+        assert_eq!(choice("").unwrap(), Choice::Quit);
         assert!(choice("3").is_err());
     }
 

@@ -1,0 +1,67 @@
+{
+    "format_version":  1,
+    "phase":  "8 native provider context integration",
+    "verified_date":  "2026-10-18",
+    "platform":  "Windows x64",
+    "verification_status":  "offline_contracts_passed",
+    "command":  "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -DeterministicOnly -ReleaseTests",
+    "exit_code":  0,
+    "formatting":  "passed",
+    "clippy_all_targets_deny_warnings":  "passed",
+    "release_build":  "passed",
+    "debug_tests_passed":  47,
+    "release_tests_passed":  47,
+    "ignored_performance_tests_per_profile":  1,
+    "supplemental_checks":  {
+                                "schema":  10,
+                                "context":  23,
+                                "session":  23,
+                                "everyday":  27,
+                                "native":  22,
+                                "windows_package_and_installer":  19,
+                                "release_pe_and_path":  4,
+                                "offline_pilot_oracle":  12,
+                                "total":  140
+                            },
+    "actual_provider_processes_started":  0,
+    "real_model_calls":  0,
+    "authenticated_agent_sessions":  0,
+    "soak_evaluations":  0,
+    "binary":  {
+                   "path":  "target/release/swapctx.exe",
+                   "bytes":  4408320,
+                   "sha256":  "ef742665b7d787d8a82958d8f14e95f5627d6bb73b25df846e63d6b9d06700f4",
+                   "kind":  "development release build; no new static-runtime build receipt issued"
+               },
+    "logs":  [
+                 {
+                     "sha256":  "bee7e03f32d1982b790ce67d14a22f685e4ec3fadc291e3b13e470369f9e0cf7",
+                     "path":  ".build/phase8-offline-final.stdout.log"
+                 },
+                 {
+                     "sha256":  "5fc4c34deaf213e81a1a1fc30860167b2b5669c1e3fe64e98248e185287385b1",
+                     "path":  ".build/phase8-offline-final.stderr.log"
+                 }
+             ],
+    "expected_stderr":  [
+                            "Cargo progress",
+                            "Synthetic hook_input_timeout rejection"
+                        ],
+    "unchanged_contracts":  [
+                                "SQLite schema 3",
+                                "swapctx.context v1",
+                                "Cargo dependencies",
+                                "Existing managed console commands",
+                                "Phase 7B integrity and containment assertions"
+                            ],
+    "unverified":  [
+                       "Installed Codex and Claude native UI execution",
+                       "Actual provider hook receipt and model adherence",
+                       "Codex session-layer merge and per-launch trust behavior",
+                       "Claude exec-form lifecycle implementation in a real provider",
+                       "Natural compaction recovery with native providers",
+                       "Hosted CI and clean-machine acceptance of these changes",
+                       "Rebuilt static-runtime portable distribution for Phase 8"
+                   ],
+    "published":  false
+}
