@@ -1,0 +1,125 @@
+{
+  "format_version": 1,
+  "phase": "10 production hardening and security review",
+  "verified_date": "2026-10-19",
+  "starting_head": "50835a7",
+  "starting_worktree": "clean",
+  "platform": "win32",
+  "architecture": "x64",
+  "node_version": "24.17.0",
+  "rust_toolchain": "1.99.0",
+  "verification_status": "offline_gate_passed",
+  "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -DeterministicOnly",
+  "exit_code": 0,
+  "formatting": "passed",
+  "clippy_all_targets_deny_warnings": "passed",
+  "debug_build": "passed",
+  "release_build": "passed",
+  "rust_tests": {
+    "passed": 55,
+    "ignored": 1,
+    "unit": 19,
+    "cli": 32,
+    "provider_launch": 4,
+    "release_profile_tests_run": false
+  },
+  "supplemental_checks": {
+    "schema": 10,
+    "context": 23,
+    "session": 23,
+    "everyday": 28,
+    "native": 33,
+    "windows_package_and_installer": 19,
+    "release_pe_and_path": 4,
+    "offline_pilot_oracle": 12,
+    "total": 152
+  },
+  "dependency_notices": {
+    "locked_windows_packages": 49,
+    "status": "passed",
+    "online_advisory_review": false
+  },
+  "regressions": [
+    {
+      "id": "managed_node_search",
+      "severity": "high",
+      "before": "Project-local dummy node.exe selected; local status failed with Windows error 216.",
+      "after": "Local status succeeds using trusted installed Node despite poisoned cwd/PATH.",
+      "test": "managed local status ignores a project-local Node executable during PATH discovery"
+    },
+    {
+      "id": "legacy_provider_search",
+      "severity": "medium",
+      "before": "Repository dummy codex.cmd selected before trusted fake provider.",
+      "after": "Canonical cwd and junction alias skipped; trusted fake exit 7 preserved.",
+      "test": "legacy_path_discovery_skips_absolute_working_directory_and_its_alias"
+    },
+    {
+      "id": "windows_hook_interpreter_search",
+      "severity": "medium",
+      "before": "Generated command used bare powershell.exe; absolute interpreter assertion failed.",
+      "after": "Quoted absolute system helper runs adapter with synthetic event and poisoned cwd/PATH; missing helper prevents launch and cleans temporary directory; Claude exec setup unaffected.",
+      "live_provider_exploit_tested": false
+    }
+  ],
+  "verification_notes": [
+    "Expected pre-fix regression failures were observed, then resolved.",
+    "Initial formatting gate found a line-wrap difference in the new Rust test; cargo fmt corrected it.",
+    "The new local-status test initially expected status rather than the existing local_status event; corrected to the actual established protocol.",
+    "Initial full gate passed before the managed Node fix; final full gate rerun against final implementation.",
+    "Native timeout fixture intentionally writes hook_input_timeout to stderr.",
+    "Offline pilot oracle checks fixture artifacts only; no pilot or model session is invoked."
+  ],
+  "changed_file_sha256": {
+    "src/provider.rs": "d06e695cfef3452fc890b7d3264fdea313e1225cefd9ce62399094c9b628156d",
+    "src/native.rs": "049be133a9ba082fb88076120100ba6680d3465c0d12c61cac79c2c2a8b1301e",
+    "src/codex.rs": "3cd3bbb9684d724fd701960df4b55651abc08f2a1fab4c1d7bd492a06074c86d",
+    "integrations/native/native.cjs": "2a6638256a9de9a2e15051960a742d1d3f00d75787f93257b65c00d82ac6a114",
+    "tests/provider_launch.rs": "36ff3b0d3c6066afa31b8fc347ebfb59912059af1a39e48cb65a8d34d22673f9",
+    "scripts/check-native.cjs": "0b2a293cb99f701b4065590e8230d2a246f8de15cccc7a21c2074cc55e4df67b",
+    "scripts/check-everyday.cjs": "956a6b00f752da20c5c0433437a513dfc674a13e9e6cbb76ded8a67d62e8e494",
+    "docs/PHASE10_PRODUCTION_HARDENING.md": "502fd4449ad98e11c09cc472889b9ad8884c6ef7bca9dd376bdbd2eb5432c7ea"
+  },
+  "local_log_sha256": {
+    ".build/phase10-verify.stdout.log": "f69dc75cceae7876dda58e2cafc739bb9f832b1c66793f4a582f090fe3557a91",
+    ".build/phase10-verify.stderr.log": "7fe96575c64e686e079ba7bf54788e1ed57264fb5adadec477170e30b90fe555"
+  },
+  "release_test_binary_sha256": "fb447c93df6d76c0688a2e9995ec8dd7652877c1cda4dc665c1135c783062b81",
+  "restrictions": {
+    "real_provider_sessions": 0,
+    "model_calls": 0,
+    "network_dependent_tests": 0,
+    "soak_tests": 0,
+    "benchmarks": 0,
+    "committed": false,
+    "pushed": false,
+    "published": false
+  },
+  "compatibility": {
+    "sqlite_schema_changed": false,
+    "context_protocol_changed": false,
+    "dependencies_changed": false,
+    "readme_changed": false,
+    "user_store_modified": false,
+    "provider_configuration_modified": false
+  },
+  "packaging": {
+    "temporary_package_fixtures_verified": true,
+    "portable_candidate_refreshed": false,
+    "static_crt_reproducible_build_recertified": false,
+    "hosted_verification": false,
+    "clean_machine_verification": false,
+    "publisher_signature_verified": false
+  },
+  "provider_receipt": "unknown",
+  "model_adherence": "unknown",
+  "remaining_limits": [
+    "Plaintext local storage and backups; heuristic secret filtering",
+    "Trusted local environment/executables and inherited Windows account ACLs",
+    "Forced-termination cleanup and process-tree behavior not certified",
+    "Exact provider compatibility, hook trust and live lifecycle receipt unverified",
+    "Offline dependency review is not a current vulnerability advisory scan",
+    "Rebuild and recertify candidate, hosted/clean-machine acceptance and signing/provenance decision before public release"
+  ],
+  "readiness": "Ready for Phase 11 release preparation, not public-release approval"
+}

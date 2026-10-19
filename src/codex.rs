@@ -52,15 +52,7 @@ pub fn execute(database: PathBuf, node: Option<PathBuf>, json: bool, action: Act
         .context("Cannot identify storage directory")?
         .canonicalize()?;
     let executable = std::env::current_exe()?.canonicalize()?;
-    let node = match node {
-        Some(value) => {
-            if !value.is_absolute() {
-                bail!("Node override must be an absolute executable path");
-            }
-            value.canonicalize()?
-        }
-        None => PathBuf::from("node"),
-    };
+    let node = crate::native::executable(node, "node")?;
     let scripts = tempfile::Builder::new()
         .prefix("swapctx-codex-")
         .tempdir()?;

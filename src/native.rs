@@ -31,7 +31,7 @@ pub struct Options {
     pub arguments: Vec<String>,
 }
 
-fn executable(path: Option<PathBuf>, default: &str) -> Result<PathBuf> {
+pub(crate) fn executable(path: Option<PathBuf>, default: &str) -> Result<PathBuf> {
     match path {
         Some(path) => {
             if !path.is_absolute() || !path.is_file() {

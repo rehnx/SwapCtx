@@ -226,11 +226,34 @@ test('Windows encoded command executes actual adapter with spaces and apostrophe
   assert.ok(c.setup.args[1].includes('command_windows='+JSON.stringify(commands.commandWindows)));
   assert.ok(c.setup.args[1].includes('additionalContextLimit=0'));
   const encoded=commands.commandWindows.split(' ').at(-1);
-  const r=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',encoded],{
+  const shell=/^"([^"]+)" -NoProfile /.exec(commands.commandWindows);
+  assert.ok(shell,'Windows hook must use a quoted absolute system PowerShell path');
+  assert.equal(shell[1].toLowerCase(),path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe').toLowerCase());
+  // Poison both implicit search locations; only the selected absolute helper may run.
+  fs.writeFileSync(path.join(f.project,'powershell.exe'),'not a Windows executable');
+  const r=spawnSync(shell[1],['-NoProfile','-NonInteractive','-EncodedCommand',encoded],{
+    env:{...process.env,PATH:f.project},
     cwd:f.project,input:JSON.stringify({session_id:'synthetic-codex-session',transcript_path:null,model:'synthetic-model',permission_mode:'default',
       hook_event_name:'SessionStart',source:'compact',cwd:f.project}),encoding:'utf8',timeout:15000});
   assert.equal(r.status,0,r.stderr);assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext,/Keep the public interface stable/);
 });
+test('unavailable Windows hook interpreter fails closed and cleans up without affecting Claude exec hooks',async()=>{
+  if(process.platform!=='win32') return;
+  const f=fixture(),saved=process.env.SystemRoot;
+  const before=fs.readdirSync(root).sort();
+  try {
+    process.env.SystemRoot=f.project; // No system PowerShell exists in this fixture.
+    await assert.rejects(adapter.launch({...f.options,provider:'codex'},[],{
+      probe:()=>true,retrieve:()=>'',tempRoot:root,warn:()=>{},
+      runProvider:()=>assert.fail('must not launch after failed hook setup'),
+    }),{code:'windows_hook_interpreter_unavailable'});
+    assert.deepEqual(fs.readdirSync(root).sort(),before);
+    assert.equal(config(f).setup.args[0],'--plugin-dir');
+  } finally {
+    if(saved===undefined) delete process.env.SystemRoot; else process.env.SystemRoot=saved;
+  }
+});
+
 test('missing callbacks, provider exit errors and interrupted launches are diagnosed and cleaned',async()=>{
   const f=fixture(),warnings=[];
   const base={probe:()=>true,retrieve:()=>'',tempRoot:root,warn:s=>warnings.push(s)};

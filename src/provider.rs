@@ -69,8 +69,17 @@ pub fn select_and_launch(launch: impl FnOnce(Provider) -> Result<u8>) -> Result<
 /// Resolve through absolute entries in PATH rather than the current working directory.
 /// Never launch a user-supplied arbitrary shell command or parse a command line.
 fn find_on_path(provider: Provider, entries: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+    let cwd = env::current_dir().ok()?.canonicalize().ok()?;
     for directory in entries {
         if !directory.is_absolute() {
+            continue;
+        }
+        let Ok(directory) = directory.canonicalize() else {
+            continue;
+        };
+        // Absolute PATH entries and junction aliases must not make a repository
+        // executable an implicit provider. Explicit overrides remain supported.
+        if directory == cwd {
             continue;
         }
         #[cfg(windows)]
@@ -184,7 +193,7 @@ mod tests {
                 Provider::Codex,
                 vec![PathBuf::from("relative"), first, second.clone()],
             ),
-            Some(second.join(name))
+            Some(second.canonicalize().unwrap().join(name))
         );
         assert!(find_on_path(Provider::Claude, vec![second]).is_none());
     }

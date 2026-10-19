@@ -60,6 +60,18 @@ function fakeSession(f, behavior = {}) {
   });
   return {session,calls,events,instances};
 }
+test('managed local status ignores a project-local Node executable during PATH discovery',()=>{
+  if(process.platform!=='win32') return;
+  const f=fixture();
+  fs.writeFileSync(path.join(f.project,'node.exe'),'not a Windows executable');
+  const result=spawnSync(exe,['--data-dir',f.dataDir,'codex','--json','status'],{
+    cwd:f.project,env:{...process.env,PATH:[f.project,path.dirname(process.execPath)].join(path.delimiter)},
+    encoding:'utf8',timeout:15000,
+  });
+  assert.equal(result.status,0,result.stderr+result.stdout);
+  assert.equal(f.events(result)[0].event,'local_status');
+});
+
 test('legacy settings and local commands work with no installed Codex, including nested discovery',() => {
   const f = fixture(),nested = path.join(f.project,'nested');fs.mkdirSync(nested);
   const before = fs.readFileSync(path.join(f.dataDir,'swapctx.db'));

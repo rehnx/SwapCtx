@@ -249,7 +249,14 @@ function hookCommands(script,config) {
   const args=[process.execPath,script,'hook',config];
   const command=args.map(bashQuote).join(' ');
   const ps='& '+args.map(psQuote).join(' ')+'; exit $LASTEXITCODE';
-  return {command,commandWindows:'powershell.exe -NoProfile -NonInteractive -EncodedCommand '+Buffer.from(ps,'utf16le').toString('base64')};
+  if(process.platform!=='win32') return {command};
+  // Never search a repository or PATH for the Windows hook interpreter.
+  const systemRoot=process.env.SystemRoot;
+  requireThat(typeof systemRoot==='string' && path.isAbsolute(systemRoot)
+    && !/["\r\n%]/.test(systemRoot),'windows_hook_interpreter_unavailable');
+  const shell=path.join(systemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
+  requireThat(fs.existsSync(shell) && fs.statSync(shell).isFile(),'windows_hook_interpreter_unavailable');
+  return {command,commandWindows:'"'+shell+'" -NoProfile -NonInteractive -EncodedCommand '+Buffer.from(ps,'utf16le').toString('base64')};
 }
 function toml(value) {
   if(typeof value==='string') return JSON.stringify(value);
@@ -261,8 +268,7 @@ function configure(options,directory,script) {
   const config=path.join(directory,'adapter.json');
   const settings={...options,version:1,fingerprintKey:randomBytes(32).toString('hex'),receipt:path.join(directory,'receipt.jsonl')};
   fs.writeFileSync(config,JSON.stringify(settings),{flag:'wx',mode:0o600});
-  const commands=hookCommands(script,config);
-  const handler={type:'command',command:commands.command,timeout:10};
+  const handler={type:'command',command:process.execPath,timeout:10};
   const group={matcher:'^(startup|resume|clear|compact|fork)$',hooks:[handler]};
   if(options.provider==='claude') {
     // Official exec-form hooks avoid Git Bash/PowerShell quoting differences.
@@ -274,7 +280,9 @@ function configure(options,directory,script) {
     fs.writeFileSync(path.join(directory,'hooks','hooks.json'),JSON.stringify({hooks:{SessionStart:[group]}}),{flag:'wx'});
     return {args:['--plugin-dir',directory],receipt:settings.receipt};
   }
-  handler.command_windows=commands.commandWindows;
+  const commands=hookCommands(script,config);
+  handler.command=commands.command;
+  if(commands.commandWindows) handler.command_windows=commands.commandWindows;
   handler.additionalContextLimit=0; // Complete independently byte-bounded packet.
   return {args:['-c','hooks.SessionStart='+toml([group])],receipt:settings.receipt};
 }
