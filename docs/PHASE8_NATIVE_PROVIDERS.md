@@ -148,7 +148,7 @@ network client, telemetry, background service, automatic memory capture or
 transcript collection. It does not expand model context or enforce boundary
 rules. Provenance is identifiable and self-reported, not authenticated.
 
-Only adapter code, configuration paths and bounded outcome metadata are written
+Only adapter code, configuration paths, a temporary fingerprint key and bounded outcome metadata are written
 to disposable temporary directories. Records, prompts, provider output and
 transcripts are not retained by SwapCtx's native adapter. It never writes
 `AGENTS.md`, `CLAUDE.md`, global/project provider settings or existing user files.
@@ -159,12 +159,13 @@ there is no claim of crash-proof cleanup or provider process-tree supervision.
 ## Diagnostics and offline verification
 
 Preflight rejects invalid/incomplete context before opening a supported provider.
-A callback failure emits a generic advisory diagnostic with a safe error code
+A retrieval or validation failure emits a generic advisory diagnostic with a safe error code
 and **no additionalContext**. The provider may continue: this is not enforcement.
 Callback stdin is capped at 32 KiB/3 seconds; local context reads have a 5-second
 timeout and bounded subprocess output. Provider probes have 5-second limits.
 
-After native exit, SwapCtx reports contexts prepared and adapter failures, or
+After native exit, SwapCtx reports contexts prepared, completed output writes,
+failure observations, unfinished callbacks and repeated snapshot identities, or
 warns that no callback was recorded. A preparation record establishes only that
 the local hook reached validation; it is written before stdout. Failed writes
 are diagnosed as `hook_output_failed`, and partial provider receipt is unknown.
@@ -172,6 +173,14 @@ Even successful stdout completion cannot establish that the provider accepted
 the context, placed it in a model request, or that the model followed it. No
 callback can mean unsupported hooks, skipped trust, policy, missing executables,
 provider errors or another environment-specific failure.
+
+[Phase 9 continuity](PHASE9_CONTEXT_CONTINUITY.md) adds bounded phase diagnostics
+and per-launch keyed fingerprints. Identical snapshots are counted once as a
+distinct diagnostic identity, but **context is never suppressed by a prior
+preparation or write**. Every callback still reads and validates current memory.
+Diagnostic capacity or contention produces an incomplete-observations warning
+without preventing an otherwise valid refresh. No receipt/adherence acknowledgement
+is inferred from these local records.
 
 ```powershell
 # Full deterministic gate: no provider/model/soak execution.

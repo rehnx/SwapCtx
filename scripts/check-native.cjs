@@ -60,7 +60,7 @@ test('representative native SessionStart payloads return context without retaini
     assert.match(out.hookSpecificOutput.additionalContext,/Keep the public interface stable/);
     assert.doesNotMatch(r.stdout,/private-fixture|never-read|synthetic-model|synthetic-agent|context_tokens/);
   }
-  const entries=fs.readFileSync(c.setup.receipt,'utf8');assert.equal(entries.trim().split('\n').length,5);
+  const entries=fs.readFileSync(c.setup.receipt,'utf8');assert.equal(entries.trim().split('\n').length,20);
   assert.doesNotMatch(entries,/Keep the|project|transcript|session_id/);
 });
 
@@ -106,6 +106,9 @@ test('retrieval errors, timeout, invalid UTF-8 and excess output never become mo
   for(const result of [{status:1,stdout:Buffer.from(f.raw())},{status:0,error:{code:'ETIMEDOUT'}},
     {status:0,stdout:Buffer.from([0xff])},{status:0,stdout:Buffer.alloc(8000,32)}]) {
     assert.throws(()=>adapter.retrieve(f.options,f.project,()=>result));
+    const stages=[];
+    assert.throws(()=>adapter.eventContext(f.options,{hook_event_name:'SessionStart',source:'resume',cwd:f.project},()=>result,stage=>stages.push(stage)));
+    assert.deepEqual(stages,['retrieval_attempted'],'failed retrieval must never report preparation');
   }
   assert.throws(()=>adapter.retrieve(f.options,f.project,()=>({status:1,stdout:Buffer.from(JSON.stringify({protocol:'swapctx.context',version:1,ok:false,error:{code:'migration_required'}}))})),/context_migration_required/);
 });
@@ -140,7 +143,9 @@ test('broken hook stdout reports failure without claiming output was emitted',as
   const output=new Writable({write(_chunk,_encoding,callback){callback(Object.assign(Error('private pipe error'),{code:'EPIPE'}));}});
   await assert.rejects(adapter.hook(c.file,input,output),/hook_output_failed/);
   const receipts=fs.readFileSync(c.setup.receipt,'utf8').trim().split('\n').map(JSON.parse);
-  assert.deepEqual(receipts,[{source:'startup',ok:true,code:'context_prepared'},{source:'startup',ok:false,code:'hook_output_failed'}]);
+  assert.deepEqual(receipts.map(e=>e.stage),['callback_requested','retrieval_attempted','context_prepared','output_failed']);
+  assert.equal(receipts.at(-1).code,'hook_output_failed');
+  assert.equal(adapter.summarizeReceipts(c.setup.receipt).written,0);
 });
 
 test('Claude short continue flag passes unchanged; Codex config and both workspace overrides remain rejected',async()=>{
@@ -310,7 +315,94 @@ const out=JSON.parse(r.stdout);if(!out.hookSpecificOutput?.additionalContext.inc
   const snapshot=fs.readdirSync(root).sort();
   const code=await adapter.launch(f.options,[],{probe:()=>true,retrieve:()=>adapter.retrieve(f.options,f.project),tempRoot:root,warn:s=>warnings.push(s),
     runProvider:(_exe,args)=>adapter.runProvider(process.execPath,[file,...args])});
-  assert.equal(code,0);assert.match(warnings.join(),/1 contexts prepared, 0 failures/);
+  assert.equal(code,0);assert.match(warnings.join(),/1 contexts prepared, 1 output writes completed, 0 failure observations/);
   assert.deepEqual(fs.readdirSync(root).sort(),snapshot);
   fs.unlinkSync(file);assert.deepEqual(fs.readdirSync(root).sort(),before);
+});
+
+test('validated fingerprints ignore wire ordering and snapshot time but retain semantic changes',()=>{
+  const f=fixture(),key='ab'.repeat(32),now=Math.floor(Date.now()/1000),p=f.packet();p.generated_unix=now;
+  const original=adapter.fingerprint(wire(p),f.project,key,now);
+  p.generated_unix=now+1;
+  const reordered=Object.fromEntries(Object.entries(p).reverse());
+  assert.equal(adapter.fingerprint(wire(reordered),f.project,key,now+1),original);
+  for(const mutate of [p=>p.records[0].content+=' revised',p=>p.boundary_rules[0].policy='deny',
+    p=>p.records[0].origin.source='new origin',p=>p.records[0].expires_unix=now+100,
+    p=>p.omitted.stale++,p=>p.omitted.conflicted++]) {
+    const changed=structuredClone(p);mutate(changed);
+    assert.notEqual(adapter.fingerprint(wire(changed),f.project,key,now+1),original);
+  }
+  const other=fixture(),changed=structuredClone(p);changed.project.root=other.project;
+  assert.notEqual(adapter.fingerprint(wire(changed),other.project,key,now+1),original);
+  for(const mutate of [p=>p.records[0].expires_unix=now,p=>p.records[0].conflicted=true,p=>p.coverage.mandatory_context_complete=false]) {
+    const invalid=structuredClone(p);mutate(invalid);assert.throws(()=>adapter.fingerprint(wire(invalid),f.project,key,now+1));
+  }
+});
+
+test('identical lifecycle callbacks always write full context; only diagnostic identities are deduplicated',()=>{
+  const f=fixture(),c=config(f);
+  for(const source of ['startup','startup','resume','compact','clear','fork']) {
+    const result=hook(f,c,{hook_event_name:'SessionStart',source,cwd:f.project,session_id:'private-session',prompt:'private-conversation'});
+    assert.equal(result.status,0,result.stderr);
+    assert.match(JSON.parse(result.stdout).hookSpecificOutput.additionalContext,/Keep the public interface stable/);
+  }
+  const summary=adapter.summarizeReceipts(c.setup.receipt);
+  assert.deepEqual(summary,{callbacks:6,prepared:6,written:6,failures:0,repeated:5,unfinished:0});
+  const log=fs.readFileSync(c.setup.receipt,'utf8');
+  assert.doesNotMatch(log,/Keep the|private-session|private-conversation|transcript|project|dataDir/);
+  const next=config(f);hook(f,next,{hook_event_name:'SessionStart',source:'resume',cwd:f.project});
+  const first=log.trim().split('\n').map(JSON.parse).find(e=>e.fingerprint).fingerprint;
+  const second=fs.readFileSync(next.setup.receipt,'utf8').trim().split('\n').map(JSON.parse).find(e=>e.fingerprint).fingerprint;
+  assert.notEqual(first,second,'different launches must not create a cross-session memory tracking identifier');
+});
+
+test('failed fresh snapshots never reuse earlier context and recovery is eligible after failure',()=>{
+  const {DatabaseSync}=require('node:sqlite');
+  const f=fixture(),c=config(f),event={hook_event_name:'SessionStart',source:'compact',cwd:f.project};
+  assert.ok(JSON.parse(hook(f,c,event).stdout).hookSpecificOutput);
+  const db=new DatabaseSync(path.join(f.dataDir,'swapctx.db'));
+  try {db.exec('UPDATE memory_metadata SET expires_at=1');} finally {db.close();}
+  const failed=hook(f,c,event);assert.equal(failed.status,0,failed.stderr);
+  assert.equal(JSON.parse(failed.stdout).hookSpecificOutput,undefined);
+  assert.doesNotMatch(failed.stdout,/Keep the public interface stable/);
+  const recovered=new DatabaseSync(path.join(f.dataDir,'swapctx.db'));
+  try {recovered.exec('UPDATE memory_metadata SET expires_at=NULL');} finally {recovered.close();}
+  assert.ok(JSON.parse(hook(f,c,event).stdout).hookSpecificOutput);
+  assert.deepEqual(adapter.summarizeReceipts(c.setup.receipt),{callbacks:3,prepared:2,written:2,failures:1,repeated:1,unfinished:0});
+  const other=fixture();event.source='fork';event.cwd=other.project;
+  assert.equal(JSON.parse(hook(f,c,event).stdout).hookSpecificOutput,undefined);
+  assert.ok(JSON.parse(hook(other,config(other),event).stdout).hookSpecificOutput);
+});
+
+test('diagnostic capacity and an abandoned append lock cannot disable validated recovery',()=>{
+  const f=fixture();
+  for(const mode of ['full','near-full','lock']) {
+    const c=config(f),event={hook_event_name:'SessionStart',source:'resume',cwd:f.project};
+    const size=adapter.RECEIPT_BYTES-(mode==='near-full'?1:0);
+    if(mode!=='lock') fs.writeFileSync(c.setup.receipt,Buffer.alloc(size,32));
+    else fs.writeFileSync(c.setup.receipt+'.lock','abandoned fixture lock');
+    const result=hook(f,c,event);assert.equal(result.status,0,result.stderr);
+    assert.ok(JSON.parse(result.stdout).hookSpecificOutput);
+    assert.match(result.stderr,/metadata unavailable/);
+    assert.ok(fs.existsSync(c.setup.receipt+'.incomplete'));
+    if(mode!=='lock') assert.equal(fs.statSync(c.setup.receipt).size,size);
+    else assert.equal(fs.existsSync(c.setup.receipt),false);
+  }
+});
+
+test('abrupt callback termination leaves an unfinished observation and never poisons the next refresh',async()=>{
+  const {spawn}=require('node:child_process');
+  const f=fixture(),c=config(f);
+  const child=spawn(process.execPath,[script,'hook',c.file],{cwd:f.project,stdio:['pipe','pipe','pipe']});
+  let out='';child.stdout.on('data',chunk=>out+=chunk);child.stderr.resume();
+  const closed=new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',resolve);});
+  try {
+    const deadline=Date.now()+2000;
+    while(!fs.existsSync(c.setup.receipt) && Date.now()<deadline) await new Promise(resolve=>setTimeout(resolve,10));
+    assert.ok(fs.existsSync(c.setup.receipt),'callback must record entry before awaiting EOF');
+  } finally {child.kill();await closed;}
+  assert.equal(out,'');assert.equal(adapter.summarizeReceipts(c.setup.receipt).unfinished,1);
+  const result=hook(f,c,{hook_event_name:'SessionStart',source:'resume',cwd:f.project});
+  assert.equal(result.status,0,result.stderr);assert.ok(JSON.parse(result.stdout).hookSpecificOutput);
+  assert.equal(adapter.summarizeReceipts(c.setup.receipt).written,1);
 });

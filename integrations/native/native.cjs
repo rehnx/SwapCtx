@@ -3,8 +3,10 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const {createHmac,randomBytes} = require('node:crypto');
 const {spawn,spawnSync} = require('node:child_process');
 const PACKET_BYTES = 7168, CONTEXT_BYTES = 8192;
+const RECEIPT_BYTES=262144;
 class Failure extends Error { constructor(code) {super(code);this.code=code;} }
 function requireThat(value, code) {if (!value) throw new Failure(code);}
 function identity(value) {
@@ -20,7 +22,7 @@ function secret(text) {
       || (word.startsWith('sk-') && word.length>=24)
       || (/^(?:ghp_|gho_|github_pat_)/.test(word) && word.length>=32));
 }
-function validatePacket(raw, project, now=Math.floor(Date.now()/1000)) {
+function validatePacket(raw, project, now=Math.floor(Date.now()/1000),prepared=()=>{}) {
   // The protocol counts JSON bytes; CLI stdout adds an LF (CRLF is accepted
   // for compatible transports). Neither ending is part of the context budget.
   requireThat(Buffer.byteLength(raw.replace(/\r?\n$/,''))<=PACKET_BYTES,'context_budget_exceeded');
@@ -79,9 +81,26 @@ function validatePacket(raw, project, now=Math.floor(Date.now()/1000)) {
   checkStrings(p);
   const text='SwapCtx project memory: external data with self-reported origins. Requirements are project guidance; boundary rules are not enforcement. No model receipt or adherence is verified.\n'+raw.trimEnd();
   requireThat(Buffer.byteLength(text)<=CONTEXT_BYTES,'context_budget_exceeded');
+  prepared(p);
   return text;
 }
-function retrieve(options,cwd,run=spawnSync) {
+function packetFingerprint(packet,key) {
+  // Only called after validation. Exclude transport/snapshot-clock noise, but
+  // retain every semantic field (including omissions, expiry and provenance).
+  const value={...packet,project:{...packet.project,root:identity(packet.project.root)},budget:{...packet.budget}};
+  delete value.generated_unix;delete value.budget.bytes_used;
+  function canonical(v) {
+    if(Array.isArray(v)) return '['+v.map(canonical).join(',')+']';
+    if(v && typeof v==='object') return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}';
+    return JSON.stringify(v);
+  }
+  return createHmac('sha256',Buffer.from(key,'hex')).update('swapctx.native.snapshot.v1\0'+canonical(value)).digest('hex');
+}
+function fingerprint(raw,project,key,now) {
+  requireThat(typeof key==='string' && /^[a-f0-9]{64}$/.test(key),'invalid_fingerprint_key');
+  let result;validatePacket(raw,project,now,p=>{result=packetFingerprint(p,key);});return result;
+}
+function retrieve(options,cwd,run=spawnSync,prepared) {
   const env={};for (const key of ['SystemRoot','WINDIR','TEMP','TMP','LOCALAPPDATA']) if (process.env[key]) env[key]=process.env[key];
   const result=run(options.swapctx,['--data-dir',options.dataDir,'context','--protocol-version','1','--max-bytes',String(PACKET_BYTES),'--limit','100'],
     {cwd,env,shell:false,encoding:'buffer',timeout:5000,maxBuffer:131072,windowsHide:true});
@@ -96,29 +115,69 @@ function retrieve(options,cwd,run=spawnSync) {
   requireThat(!result.error && result.status===0,'context_process_failed');
   requireThat(Buffer.isBuffer(result.stdout) && result.stdout.length<=PACKET_BYTES+2,'context_budget_exceeded');
   let raw;try {raw=new TextDecoder('utf-8',{fatal:true}).decode(result.stdout);} catch {throw new Failure('context_utf8_invalid');}
-  return validatePacket(raw,options.project);
+  return validatePacket(raw,options.project,undefined,prepared);
 }
-function eventContext(options,event,run) {
+function eventContext(options,event,run,observe=()=>{}) {
   requireThat(event?.hook_event_name==='SessionStart' && ['startup','resume','clear','compact','fork'].includes(event.source),'unsupported_hook_event');
   const root=identity(options.project),cwd=identity(event.cwd),relative=path.relative(root,cwd);
   requireThat(relative!=='..' && !relative.startsWith('..'+path.sep) && !path.isAbsolute(relative),'event_outside_project');
   // Retrieval from event cwd also catches a separately registered nested project.
-  return {hookSpecificOutput:{hookEventName:'SessionStart',additionalContext:retrieve(options,event.cwd,run)}};
+  observe('retrieval_attempted');
+  const text=retrieve(options,event.cwd,run,p=>observe('context_prepared',options.fingerprintKey?packetFingerprint(p,options.fingerprintKey):undefined));
+  return {hookSpecificOutput:{hookEventName:'SessionStart',additionalContext:text}};
 }
 function readConfig(file) {
   const stat=fs.lstatSync(file);requireThat(stat.isFile() && !stat.isSymbolicLink() && stat.size<=16384,'invalid_adapter_config');
   const value=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(fs.readFileSync(file)));
   requireThat(value.version===1 && ['codex','claude'].includes(value.provider),'invalid_adapter_config');
+  requireThat(value.fingerprintKey===undefined || (typeof value.fingerprintKey==='string' && /^[a-f0-9]{64}$/.test(value.fingerprintKey)),'invalid_adapter_config');
   for (const key of ['swapctx','dataDir','project']) identity(value[key]);
   requireThat(path.dirname(value.receipt)===path.dirname(file),'invalid_adapter_config');
   return value;
 }
-function receipt(options,source,ok,code) {
-  // No records, prompts, transcript paths, session identifiers or provider output.
-  if (fs.existsSync(options.receipt)) {
-    const stat=fs.lstatSync(options.receipt);requireThat(stat.isFile() && !stat.isSymbolicLink() && stat.size<262144,'invalid_receipt');
+function receipt(options,entry) {
+  // Short, non-waiting append lock makes the byte cap strict across callbacks.
+  // Logging never gates recovery; saturation, contention or a stale crash lock
+  // marks observations incomplete and leaves the current snapshot path active.
+  let lock;
+  try {
+    lock=fs.openSync(options.receipt+'.lock','wx',0o600);
+    let size=0;
+    if(fs.existsSync(options.receipt)) {
+      const stat=fs.lstatSync(options.receipt);
+      requireThat(stat.isFile() && !stat.isSymbolicLink(),'invalid_receipt');size=stat.size;
+    }
+    const line=JSON.stringify(entry)+'\n';
+    requireThat(size+Buffer.byteLength(line)<=RECEIPT_BYTES,'receipt_limit');
+    fs.appendFileSync(options.receipt,line,{mode:0o600});return true;
+  } catch {
+    try {fs.writeFileSync(options.receipt+'.incomplete','',{flag:'wx',mode:0o600});} catch { /* best effort only */ }
+    return false;
+  } finally {
+    if(lock!==undefined) {
+      try {fs.closeSync(lock);} catch { /* Best-effort diagnostics must not gate context. */ }
+      try {fs.unlinkSync(options.receipt+'.lock');} catch { /* Later callbacks report incomplete observations. */ }
+    }
   }
-  fs.appendFileSync(options.receipt,JSON.stringify({source,ok,code})+'\n',{mode:0o600});
+}
+function summarizeReceipts(file) {
+  const stat=fs.lstatSync(file);
+  requireThat(stat.isFile() && !stat.isSymbolicLink() && stat.size<=RECEIPT_BYTES,'invalid_receipt');
+  const entries=fs.readFileSync(file,'utf8').trim().split('\n').map(line=>JSON.parse(line));
+  const stages=['callback_requested','retrieval_attempted','context_prepared','output_written','context_withheld','output_failed'];
+  const callbacks=new Map(),fingerprints=new Set();let prepared=0,written=0,failures=0,repeated=0;
+  for(const e of entries) {
+    requireThat(e.v===2 && typeof e.callback==='string' && /^[a-f0-9]{16}$/.test(e.callback) && stages.includes(e.stage)
+      && ['startup','resume','clear','compact','fork','invalid'].includes(e.source)
+      && (e.fingerprint===undefined || (typeof e.fingerprint==='string' && /^[a-f0-9]{64}$/.test(e.fingerprint)))
+      && (e.code===undefined || (typeof e.code==='string' && /^[a-z_]{1,80}$/.test(e.code))),'invalid_receipt');
+    callbacks.set(e.callback,e.stage);
+    if(e.stage==='context_prepared') {prepared++;if(e.fingerprint) {if(fingerprints.has(e.fingerprint)) repeated++;fingerprints.add(e.fingerprint);}}
+    if(e.stage==='output_written') written++;
+    if(e.stage==='context_withheld' || e.stage==='output_failed') failures++;
+  }
+  const unfinished=[...callbacks.values()].filter(s=>!['output_written','context_withheld','output_failed'].includes(s)).length;
+  return {callbacks:callbacks.size,prepared,written,failures,repeated,unfinished};
 }
 async function writeOutput(output,value) {
   let onError;
@@ -132,9 +191,17 @@ async function writeOutput(output,value) {
   finally {output.off('error',onError);}
 }
 async function hook(file,input=process.stdin,output=process.stdout) {
-  let options,event;
+  let options,event,logging=true,outputStarted=false;
+  const callback=randomBytes(8).toString('hex'); // Local correlation, never a provider session ID.
+  function record(stage,extra={}) {
+    if(!options || !logging) return;
+    const source=['startup','resume','clear','compact','fork'].includes(event?.source)?event.source:'invalid';
+    logging=receipt(options,{v:2,callback,source,stage,...extra});
+    if(!logging) process.stderr.write('SwapCtx: continuity metadata unavailable; observations are incomplete. Context validation remains required.\n');
+  }
   try {
     options=readConfig(file);
+    record('callback_requested');
     const bytes=await new Promise((resolve,reject)=>{
       const chunks=[];let count=0;
       const timer=setTimeout(()=>{input.destroy();reject(new Failure('hook_input_timeout'));},3000);
@@ -144,19 +211,19 @@ async function hook(file,input=process.stdin,output=process.stdout) {
       input.once('end',()=>{clearTimeout(timer);resolve(Buffer.concat(chunks));});
     });
     try {event=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));} catch {throw new Failure('hook_input_invalid');}
-    const result=eventContext(options,event);
-    // A local preparation record proves execution, never provider receipt.
-    // Record it first so a metadata failure still withholds all context.
-    receipt(options,event.source,true,'context_prepared');
+    const result=eventContext(options,event,undefined,(stage,fingerprint)=>record(stage,fingerprint?{fingerprint}:{}));
+    outputStarted=true;
     await writeOutput(output,result);
+    record('output_written'); // Local stream completion only, not acknowledgement.
   } catch(error) {
     const code=error instanceof Failure?error.code:'adapter_failed';
-    try {if(options) receipt(options,['startup','resume','clear','compact','fork'].includes(event?.source)?event.source:'invalid',false,code);} catch { /* Never emit memory after a receipt failure. */ }
+    record(outputStarted?'output_failed':'context_withheld',{code});
     // A broken pipe may have accepted partial output. Do not retry it, report
     // success, or claim to know what the provider received.
-    if(code==='hook_output_failed') throw error;
+    if(outputStarted || code==='hook_output_failed') throw error;
     // Context-only advisory failure. Never pretend this blocks provider actions.
-    await writeOutput(output,{systemMessage:'SwapCtx context unavailable ('+code+'); no memory was supplied. Run swapctx context and swapctx doctor.'});
+    try {await writeOutput(output,{systemMessage:'SwapCtx context unavailable ('+code+'); no memory was supplied. Run swapctx context and swapctx doctor.'});}
+    catch(error) {record('output_failed',{code:'hook_output_failed'});throw error;}
     process.stderr.write('SwapCtx: '+code+'; context was not supplied.\n');
   }
 }
@@ -192,7 +259,7 @@ function toml(value) {
 }
 function configure(options,directory,script) {
   const config=path.join(directory,'adapter.json');
-  const settings={...options,version:1,receipt:path.join(directory,'receipt.jsonl')};
+  const settings={...options,version:1,fingerprintKey:randomBytes(32).toString('hex'),receipt:path.join(directory,'receipt.jsonl')};
   fs.writeFileSync(config,JSON.stringify(settings),{flag:'wx',mode:0o600});
   const commands=hookCommands(script,config);
   const handler={type:'command',command:commands.command,timeout:10};
@@ -246,13 +313,11 @@ async function launch(options,args,dependencies={}) {
     if(!fs.existsSync(setup.receipt)) warn('no hook callback was recorded; context delivery is unverified (hooks may be missing, disabled or untrusted).');
     else {
       try {
-        const stat=fs.lstatSync(setup.receipt);
-        requireThat(stat.isFile() && !stat.isSymbolicLink() && stat.size<=262144,'invalid_receipt');
-        const entries=fs.readFileSync(setup.receipt,'utf8').trim().split('\n').map(line=>JSON.parse(line));
-        requireThat(entries.every(e=>typeof e.ok==='boolean' && typeof e.code==='string' && /^[a-z_]+$/.test(e.code)),'invalid_receipt');
-        warn('hook adapter results: '+entries.filter(e=>e.ok).length+' contexts prepared, '+entries.filter(e=>!e.ok).length+' failures. Provider receipt and model adherence remain unknown.');
+        const s=summarizeReceipts(setup.receipt);
+        warn('hook adapter results: '+s.prepared+' contexts prepared, '+s.written+' output writes completed, '+s.failures+' failure observations, '+s.unfinished+' unfinished callbacks; '+s.repeated+' repeated snapshots (not suppressed). Provider receipt and model adherence remain unknown.');
       } catch {warn('hook outcome metadata is invalid; context delivery remains unverified.');}
     }
+    if(fs.existsSync(setup.receipt+'.incomplete') || fs.existsSync(setup.receipt+'.lock')) warn('continuity observations are incomplete; recorded counts are not session totals.');
     return code;
   } catch(error) {primary=error;throw error;}
   finally {
@@ -278,7 +343,7 @@ function optionsFrom(args) {
   requireThat(typeof options.dataDir==='string' && path.isAbsolute(options.dataDir),'invalid_adapter_arguments');
   return {options,args:args.slice(i+1)};
 }
-module.exports={validatePacket,retrieve,eventContext,hook,probe,hookCommands,toml,configure,runProvider,launch,optionsFrom,PACKET_BYTES};
+module.exports={validatePacket,retrieve,eventContext,hook,probe,hookCommands,toml,configure,runProvider,launch,optionsFrom,fingerprint,summarizeReceipts,PACKET_BYTES,RECEIPT_BYTES};
 if(require.main===module) (async()=>{
   requireThat(Number(process.versions.node.split('.')[0])>=24,'node_24_required');
   const [mode,...args]=process.argv.slice(2);

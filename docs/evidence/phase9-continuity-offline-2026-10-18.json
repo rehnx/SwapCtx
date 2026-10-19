@@ -1,0 +1,159 @@
+{
+  "format_version": 1,
+  "phase": "9 native context continuity and recovery",
+  "verified_date": "2026-10-18",
+  "base_commit": "680f1c4",
+  "initial_worktree": "clean",
+  "platform": "Windows x64",
+  "node_version": "24.17.0",
+  "rust_toolchain": "1.99.0",
+  "verification_status": "offline_contracts_passed",
+  "checks": [
+    {
+      "command": "cargo fmt --check",
+      "exit_code": 0
+    },
+    {
+      "command": "cargo clippy --locked --offline --all-targets -- -D warnings",
+      "exit_code": 0
+    },
+    {
+      "command": "cargo build --locked --offline",
+      "exit_code": 0
+    },
+    {
+      "command": "cargo test --locked --offline --all-targets",
+      "exit_code": 0,
+      "passed": 54,
+      "ignored": 1
+    },
+    {
+      "command": "node scripts/check-native.cjs target/debug/swapctx.exe",
+      "exit_code": 0,
+      "passed": 32
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0
+    },
+    {
+      "command": "node --test --test-name-pattern=\"broken hook stdout|fake native UI|diagnostic capacity\" scripts/check-native.cjs",
+      "exit_code": 0,
+      "passed": 3,
+      "note": "Final output-started guard and near-capacity boundary verification. Targeted reruns, not additional cases in the 32-case total."
+    }
+  ],
+  "verification_scope": "Rust suite verifies unchanged Rust command paths. The 32-case native suite passed; after the final output-started guard, three affected cases passed again. Final development build embeds the final adapter. No release distribution rebuilt.",
+  "lifecycle_sources": [
+    "startup",
+    "resume",
+    "compact",
+    "clear",
+    "fork"
+  ],
+  "fingerprints": {
+    "algorithm": "HMAC-SHA-256",
+    "key_scope": "random per native launch",
+    "canonicalization": "sorted object keys; ordered arrays; canonical project root",
+    "excluded_fields": [
+      "generated_unix",
+      "budget.bytes_used"
+    ],
+    "context_suppression": false,
+    "plaintext_cache": false,
+    "diagnostic_identity_deduplication": true
+  },
+  "continuity_metadata": {
+    "receipt_format_version": 2,
+    "max_receipt_bytes": 262144,
+    "append_lock": "exclusive, nonwaiting; skipped logging marks observations incomplete",
+    "fields": [
+      "local callback random ID",
+      "allowlisted source",
+      "stage",
+      "safe code",
+      "optional keyed fingerprint"
+    ],
+    "capacity_failure": "current snapshot still must validate; successful recovery remains eligible"
+  },
+  "new_regressions": [
+    "Stable validated fingerprints and semantic invalidation",
+    "Identical events retain full context; launch keys separate identities",
+    "Stale snapshot rejection followed by successful refresh and isolated fork scope",
+    "Full, near-full or locked diagnostic storage cannot disable valid recovery",
+    "Abrupt real Node hook termination leaves unfinished observation; next refresh succeeds"
+  ],
+  "logs": [
+    {
+      "path": ".build/phase9-rust.stdout.log",
+      "sha256": "b9dc8ebe34274fae3e341de5a19f96c8e9bd275fcb31e4c18006edd23c8ca0be"
+    },
+    {
+      "path": ".build/phase9-rust.stderr.log",
+      "sha256": "f2cbf5e638132a4cdbd4287f0e18620c4d7f718f34a0587a9e738f18e481b5d8"
+    },
+    {
+      "path": ".build/phase9-native.stdout.log",
+      "sha256": "89aa1e2203c2a32a43f3c7048b55277734b07e0c7d0519839fd0e156f7de8b18"
+    },
+    {
+      "path": ".build/phase9-native.stderr.log",
+      "sha256": "2d1f48e32f1c5296df1e5e96fd5b65c845f94af732e29ca05a89a97c973a2a0f"
+    }
+  ],
+  "expected_stderr": [
+    "Rust compiler progress and local fake-provider diagnostics",
+    "Native hook_input_timeout fixture; PowerShell may wrap stderr as NativeCommandError although the suite exit is zero"
+  ],
+  "binary": {
+    "path": "target/debug/swapctx.exe",
+    "bytes": 7703552,
+    "sha256": "bd462e073b16bfaecd3d719915e584260bf83e317adab242b60be05d7280464b",
+    "kind": "development build only"
+  },
+  "source_files": [
+    {
+      "path": "integrations/native/native.cjs",
+      "sha256": "b7a8b79343b95cdf33c23b659febb5f3d0aa90786701aadcf33c65c274c0ee1a"
+    },
+    {
+      "path": "scripts/check-native.cjs",
+      "sha256": "8b59530505655c19349886c11612e07ec50de708553bb228edc33dda6c52a791"
+    },
+    {
+      "path": "docs/PHASE8_NATIVE_PROVIDERS.md",
+      "sha256": "300f2ed9f97c4286f83d1c323134d4ce646b27d9b5c67b391c3cb165205153cd"
+    },
+    {
+      "path": "docs/PHASE9_CONTEXT_CONTINUITY.md",
+      "sha256": "d56128fb08aa25ce500f48fde705ccf397832cb8c9aecb6b00222178708cac9c"
+    }
+  ],
+  "actual_provider_processes_started": 0,
+  "real_model_calls": 0,
+  "authenticated_sessions": 0,
+  "soak_tests": 0,
+  "network_dependent_tests": 0,
+  "unchanged": [
+    "Rust CLI source and commands",
+    "SQLite schema 3",
+    "swapctx.context v1",
+    "Cargo dependencies",
+    "Native provider hooks and admission gates",
+    "Provider trust, authentication and permissions"
+  ],
+  "remaining_unverified": [
+    "Exact supported native provider versions",
+    "Real provider configuration loading and trust",
+    "Provider lifecycle emission and automatic compaction handling",
+    "Provider receipt and model adherence",
+    "Hard-kill cleanup and process-tree supervision",
+    "Clean-machine, hosted CI and portable distribution acceptance"
+  ],
+  "provider_receipt": "unknown",
+  "model_adherence": "unknown",
+  "committed": false,
+  "published": false,
+  "portable_distribution_rebuilt": false,
+  "final_review_date": "2026-10-19"
+}
