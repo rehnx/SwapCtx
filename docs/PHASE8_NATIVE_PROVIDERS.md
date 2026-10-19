@@ -47,13 +47,34 @@ swapctx native claude --context `
 ```
 
 Node.js 24+ is required for the optional context adapter. Ordinary native launch
-does not need Node or an initialized database. On Windows, executable overrides
-must be absolute existing `.exe` files. Shell shims (`.cmd`, `.bat`, `.ps1`) are
-not supported: select the underlying native executable. Default discovery checks
+of a native `.exe` does not need Node or an initialized database. Standard npm
+installs of `@openai/codex` and `@anthropic-ai/claude-code` can instead resolve
+their declared JavaScript entry points and invoke Node directly. The shim is
+never parsed or executed. These layouts need Node even without context. On
+Windows, overrides must be absolute existing `.exe` files or standard npm
+`.cmd`/`.bat` shims with valid, contained package metadata. Arbitrary batch/PowerShell,
+pnpm/Yarn indirection and packages escaping their prefix remain unsupported by
+`native`; plain legacy `launch` remains available for trusted shell shims.
+Default discovery prefers native `.exe` files, then recognized npm packages, checks
 absolute PATH directories and excludes the current project directory, avoiding
 Windows' implicit current-directory executable search. SwapCtx does not modify
 PATH. Bare invocation requires an interactive terminal; scripts should use an
 explicit subcommand.
+
+For a local context-readiness check that never starts or even probes the provider:
+
+```powershell
+swapctx native codex --check
+swapctx native claude --check
+```
+
+The check resolves files, verifies Node 24+, reads existing project memory,
+validates mandatory context and generates temporary hook definitions, then cleans
+them. It never changes provider settings or creates/migrates a store. It reports
+provider compatibility, receipt and model adherence as unverified/unknown. An npm
+wrapper may still lack a required native payload; health does not execute it.
+See [the integration quality review](NATIVE_INTEGRATION_QUALITY_REVIEW.md) for
+installation boundaries, failure coverage and the complete synthetic chain.
 
 ## Documented interfaces and compatibility
 

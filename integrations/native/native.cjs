@@ -227,8 +227,8 @@ async function hook(file,input=process.stdin,output=process.stdout) {
     process.stderr.write('SwapCtx: '+code+'; context was not supplied.\n');
   }
 }
-function probe(provider,exe,run=spawnSync) {
-  const call=args=>run(exe,args,{shell:false,encoding:'utf8',timeout:5000,maxBuffer:65536,windowsHide:true});
+function probe(provider,exe,run=spawnSync,prefix=[]) {
+  const call=args=>run(exe,[...prefix,...args],{shell:false,encoding:'utf8',timeout:5000,maxBuffer:65536,windowsHide:true});
   const version=call(['--version']);
   if (version.error || version.status!==0) return false;
   const help=call(['--help']);if (help.error || help.status!==0) return false;
@@ -298,9 +298,10 @@ async function runProvider(exe,args,dependencies={}) {
 async function launch(options,args,dependencies={}) {
   const warn=dependencies.warn||((text)=>process.stderr.write('SwapCtx: '+text+'\n'));
   const run=dependencies.runProvider||runProvider;
-  if (!(dependencies.probe||probe)(options.provider,options.executable)) {
+  const prefix=options.providerScript?[options.providerScript]:[];
+  if (!(dependencies.probe||probe)(options.provider,options.executable,undefined,prefix)) {
     warn('provider did not pass the native-hook compatibility probe; launching its original UI without SwapCtx context.');
-    return run(options.executable,args);
+    return run(options.executable,[...prefix,...args]);
   }
   // Prevent provider flags from relocating the initial workspace or silently
   // replacing the integration. Ordinary launching accepts all original flags.
@@ -316,9 +317,9 @@ async function launch(options,args,dependencies={}) {
     const setup=configure(options,directory,__filename);
     warn('context hooks requested; provider policy/trust may skip them. Adapter output does not prove model receipt or adherence.');
     if(options.provider==='codex') warn('review SwapCtx in /hooks; trust is never bypassed. After first approval, /compact requests a fresh SessionStart callback.');
-    const code=await run(options.executable,[...setup.args,...args]);
+    const code=await run(options.executable,[...prefix,...setup.args,...args]);
     if(code!==0) primary=new Failure('native_provider_exit');
-    if(!fs.existsSync(setup.receipt)) warn('no hook callback was recorded; context delivery is unverified (hooks may be missing, disabled or untrusted).');
+    if(!fs.existsSync(setup.receipt)) warn('no hook callback was recorded; context delivery is unverified (hooks may be missing, disabled or untrusted). Run swapctx native '+options.provider+' --check for local prerequisites; review provider hook trust/policy separately.');
     else {
       try {
         const s=summarizeReceipts(setup.receipt);
@@ -340,22 +341,49 @@ async function launch(options,args,dependencies={}) {
     }
   }
 }
+function check(options) {
+  process.stdout.write('Node runtime: ready ('+process.versions.node+')\n');
+  process.stdout.write('Provider receipt: unknown. Model adherence: unknown. No provider was started.\n');
+  const parent=identity(os.tmpdir()),directory=fs.mkdtempSync(path.join(parent,'swapctx-hooks-check-'));
+  const owned=fs.lstatSync(directory);
+  try {
+    retrieve(options,process.cwd());
+    process.stdout.write('Context: current snapshot validated; mandatory requirements/rules complete (local preparation only)\n');
+    configure(options,directory,__filename);
+    process.stdout.write('Hook configuration: generated locally; provider loading, version compatibility and trust remain unverified\n');
+    return 0;
+  } catch(error) {
+    process.stderr.write('SwapCtx: local health check failed: '+(error instanceof Failure?error.code:'native_check_failed')+
+      '; no memory contents displayed. Inspect swapctx doctor and memory freshness/conflicts locally.\n');
+    return 1;
+  } finally {
+    const actual=fs.lstatSync(directory);
+    requireThat(!actual.isSymbolicLink() && actual.dev===owned.dev && actual.ino===owned.ino
+      && identity(path.dirname(directory))===parent,'unsafe_adapter_cleanup');
+    fs.rmSync(directory,{recursive:true});
+  }
+}
 function optionsFrom(args) {
   const options={};let i=0;
   for(;i<args.length && args[i]!=='--';i+=2) {
-    const name={'--provider':'provider','--swapctx':'swapctx','--data-dir':'dataDir','--project':'project','--executable':'executable'}[args[i]];
+    const name={'--provider':'provider','--swapctx':'swapctx','--data-dir':'dataDir','--project':'project','--executable':'executable','--provider-script':'providerScript'}[args[i]];
     requireThat(name && args[i+1] && !Object.hasOwn(options,name),'invalid_adapter_arguments');options[name]=args[i+1];
   }
   requireThat(['codex','claude'].includes(options.provider) && typeof options.executable==='string','invalid_adapter_arguments');
   for(const key of ['swapctx','project']) identity(options[key]);
+  if(options.providerScript) {
+    identity(options.providerScript);
+    requireThat(fs.statSync(options.providerScript).isFile() && /\.(?:c?js|mjs)$/i.test(options.providerScript),'invalid_provider_script');
+  }
   requireThat(typeof options.dataDir==='string' && path.isAbsolute(options.dataDir),'invalid_adapter_arguments');
   return {options,args:args.slice(i+1)};
 }
-module.exports={validatePacket,retrieve,eventContext,hook,probe,hookCommands,toml,configure,runProvider,launch,optionsFrom,fingerprint,summarizeReceipts,PACKET_BYTES,RECEIPT_BYTES};
+module.exports={validatePacket,retrieve,eventContext,hook,probe,hookCommands,toml,configure,runProvider,launch,check,optionsFrom,fingerprint,summarizeReceipts,PACKET_BYTES,RECEIPT_BYTES};
 if(require.main===module) (async()=>{
   requireThat(Number(process.versions.node.split('.')[0])>=24,'node_24_required');
   const [mode,...args]=process.argv.slice(2);
   if(mode==='hook' && args.length===1) await hook(args[0]);
   else if(mode==='launch') {const parsed=optionsFrom(args);process.exitCode=await launch(parsed.options,parsed.args);}
+  else if(mode==='check') {const parsed=optionsFrom(args);requireThat(parsed.args.length===0,'invalid_adapter_arguments');process.exitCode=check(parsed.options);}
   else throw new Failure('invalid_adapter_arguments');
 })().catch(error=>{process.stderr.write('SwapCtx: '+(error instanceof Failure?error.code:'native_adapter_failed')+'; no provider state was changed by SwapCtx.\n');process.exitCode=1;});

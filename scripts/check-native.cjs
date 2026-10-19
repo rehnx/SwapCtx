@@ -37,6 +37,129 @@ function config(f) {
 function hook(f,c,event) {
   return spawnSync(process.execPath,[script,'hook',c.file],{cwd:f.project,input:Buffer.isBuffer(event)?event:JSON.stringify(event),encoding:'utf8',timeout:10000});
 }
+
+function npmFixture(f,provider,extraEnv={}) {
+  const bin=path.join(root,'npm '+(++sequence)),pkg=path.join(bin,'node_modules',provider==='codex'?'@openai/codex':'@anthropic-ai/claude-code');
+  fs.mkdirSync(pkg,{recursive:true});
+  fs.writeFileSync(path.join(f.project,provider+'.cmd'),'@echo off\r\necho UNTRUSTED-CWD-SHIM\r\nexit /b 98\r\n');
+  fs.writeFileSync(path.join(bin,provider+'.cmd'),'@echo off\r\necho SHIM-MUST-NOT-EXECUTE\r\nexit /b 99\r\n');
+  fs.writeFileSync(path.join(pkg,'package.json'),JSON.stringify({name:provider==='codex'?'@openai/codex':'@anthropic-ai/claude-code',bin:{[provider]:'fixture.cjs'}}));
+  fs.copyFileSync(path.join(__dirname,'../tests/fixtures/native-provider.cjs'),path.join(pkg,'fixture.cjs'));
+  const report=path.join(bin,'synthetic-report.json');
+  const env={...process.env,PATH:[f.project,bin,path.dirname(process.execPath)].join(path.delimiter),SWAPCTX_FAKE_PROVIDER:provider,
+    SWAPCTX_FAKE_REPORT:report,SWAPCTX_FAKE_CLI:exe,SWAPCTX_FAKE_DATA:f.dataDir,...extraEnv};
+  const run=(args=[],data=f.dataDir)=>spawnSync(exe,['--data-dir',data,'native',provider,...args],{cwd:f.project,env,encoding:'utf8',timeout:45000});
+  return {bin,pkg,report,env,run,read:()=>JSON.parse(fs.readFileSync(report,'utf8'))};
+}
+
+test('actual Rust CLI and embedded adapter deliver all lifecycle events to both synthetic npm providers',()=>{
+  if(process.platform!=='win32') return;
+  for(const provider of ['codex','claude']) {
+    const f=fixture(),n=npmFixture(f,provider,{SWAPCTX_FAKE_MODE:'refresh'});
+    const forwarded=provider==='codex'?['resume','synthetic-session','value with space & percent% literal']:['-c','value with space & percent% literal'];
+    const r=n.run(['--context','--',...forwarded]);
+    assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/synthetic-native-interface/);
+    assert.doesNotMatch(r.stdout,/SHIM-MUST/);
+    const report=n.read();assert.deepEqual(report.probes,['--version','--help']);
+    assert.deepEqual(report.arguments.slice(-forwarded.length),forwarded);
+    assert.deepEqual(report.callbacks.map(c=>c.source),['startup','resume','compact','clear','fork']);
+    for(const callback of report.callbacks) assert.ok(callback.context&&callback.expected_requirement&&callback.project_matches&&callback.protocol_valid&&callback.mandatory_complete,JSON.stringify(callback));
+    assert.match(r.stderr,/5 contexts prepared, 5 output writes completed, 0 failure observations/);
+    assert.match(r.stderr,/Provider receipt and model adherence remain unknown/);
+    for(const dir of [report.hook_directory,report.script_directory]) assert.equal(fs.existsSync(dir),false);
+  }
+});
+
+test('native health is read-only and never even probes either synthetic provider',()=>{
+  if(process.platform!=='win32') return;
+  for(const provider of ['codex','claude']) {
+    const f=fixture(),n=npmFixture(f,provider),before=fs.readFileSync(path.join(f.dataDir,'swapctx.db'));
+    const r=n.run(['--check']);assert.equal(r.status,0,r.stderr);
+    assert.match(r.stdout,/Hook configuration: generated locally/);assert.match(r.stdout,/Provider receipt: unknown/);
+    assert.doesNotMatch(r.stdout+r.stderr,/Keep the public interface/);assert.equal(fs.existsSync(n.report),false);
+    assert.deepEqual(fs.readFileSync(path.join(f.dataDir,'swapctx.db')),before);
+    const missing=path.join(root,'no-health-store-'+(++sequence));
+    const bad=n.run(['--check'],missing);assert.equal(bad.status,1);assert.match(bad.stderr,/context_store_unavailable/);
+    assert.equal(fs.existsSync(missing),false);assert.equal(fs.existsSync(n.report),false);
+    f.ok(['memory','add','Competing choice','--kind','requirement','--key','choice']);
+    f.ok(['memory','add','Different choice','--kind','requirement','--key','choice']);
+    const invalid=n.run(['--check']);assert.equal(invalid.status,1);assert.match(invalid.stderr,/mandatory_context_incomplete/);
+    assert.equal(fs.existsSync(n.report),false);
+    const launch=n.run(['--context']);assert.equal(launch.status,1);assert.match(launch.stderr,/mandatory_context_incomplete/);
+    assert.equal(n.read().ui_started,undefined);
+  }
+});
+
+test('full CLI handles both providers missing hooks, invalid events, wrong projects and provider exits without claiming receipt',()=>{
+  if(process.platform!=='win32') return;
+  for(const provider of ['codex','claude']) for(const mode of ['no-hooks','bad-hook','outside','nested','error','interrupt']) {
+    const f=fixture(),overrides={SWAPCTX_FAKE_MODE:mode};
+    if(mode==='outside') overrides.SWAPCTX_FAKE_EVENT_CWD=root;
+    if(mode==='nested') {const nested=path.join(f.project,'child');fs.mkdirSync(nested);assert.equal(f.cli(['init'],nested).status,0);overrides.SWAPCTX_FAKE_EVENT_CWD=nested;}
+    if(mode==='error') overrides.SWAPCTX_FAKE_EXIT='29';
+    const n=npmFixture(f,provider,overrides),r=n.run(['--context']);
+    assert.equal(r.status,mode==='error'?29:mode==='interrupt'?1:0,r.stderr);
+    const report=n.read();
+    if(['no-hooks','interrupt'].includes(mode)) assert.match(r.stderr,/no hook callback was recorded/);
+    else if(mode==='error') assert.match(r.stderr,/5 contexts prepared/);
+    else {assert.equal(report.callbacks.length,5);assert.ok(report.callbacks.every(c=>!c.context&&c.advisory));assert.match(r.stderr,/0 contexts prepared, 0 output writes completed, 5 failure observations/);}
+    for(const dir of [report.hook_directory,report.script_directory]) assert.equal(fs.existsSync(dir),false);
+  }
+});
+
+test('unsupported provider probes preserve shell-free npm arguments and do not create a store',()=>{
+  if(process.platform!=='win32') return;
+  for(const provider of ['codex','claude']) {
+    const f=fixture(),n=npmFixture(f,provider,{SWAPCTX_FAKE_UNSUPPORTED:'1',SWAPCTX_FAKE_EXIT:'27'}),missing=path.join(root,'absent-'+(++sequence));
+    const r=n.run(['--context','--','--resume','a & b % literal'],missing);
+    assert.equal(r.status,27,r.stderr);assert.match(r.stderr,/without SwapCtx context/);assert.equal(fs.existsSync(missing),false);
+    assert.deepEqual(n.read().arguments,['--resume','a & b % literal']);
+  }
+});
+
+test('plain npm native launching forwards literal arguments without probes, hooks or memory creation',()=>{
+  if(process.platform!=='win32') return;
+  for(const provider of ['codex','claude']) {
+    const f=fixture(),n=npmFixture(f,provider),missing=path.join(root,'no-plain-store-'+(++sequence));
+    const args=['--resume','space & | < > ^ % ! " literal'];
+    const r=n.run(['--',...args],missing);assert.equal(r.status,0,r.stderr);
+    assert.deepEqual(n.read().arguments,args);assert.deepEqual(n.read().probes,[]);
+    assert.equal(n.read().hook_directory,undefined);assert.equal(fs.existsSync(missing),false);
+  }
+});
+
+test('npm metadata cannot escape scope or disguise arbitrary shell shims; health diagnoses missing runtimes',()=>{
+  if(process.platform!=='win32') return;
+  const f=fixture(),n=npmFixture(f,'codex');
+  const manifest=path.join(n.pkg,'package.json'),original=fs.readFileSync(manifest,'utf8');
+  const arbitrary=path.join(n.bin,'unrelated.cmd');fs.writeFileSync(arbitrary,'@exit /b 99');
+  const unrelated=n.run(['--check','--executable',arbitrary]);assert.equal(unrelated.status,1);assert.match(unrelated.stdout,/unsupported_provider_layout/);
+  for(const change of [
+    {name:'unrelated',bin:{codex:'fixture.cjs'}},
+    {name:'@openai/codex',bin:{codex:'../outside.cjs'}},
+    {name:'@openai/codex',bin:{codex:'fixture:stream.cjs'}},
+    {name:'@openai/codex',bin:{codex:'fixture.cjs & echo injected'}},
+  ]) {
+    fs.writeFileSync(manifest,JSON.stringify(change));
+    const r=n.run(['--check']);assert.equal(r.status,1);assert.match(r.stdout,/unsupported_provider_layout/);
+    assert.equal(fs.existsSync(n.report),false);
+  }
+  fs.writeFileSync(manifest,'{"name":"@openai/codex","name":"unrelated","bin":{"codex":"fixture.cjs"}}');
+  assert.match(n.run(['--context']).stderr,/unsupported_provider_layout/);
+  fs.writeFileSync(manifest,original);
+  const outside=path.join(n.bin,'outside-package');fs.mkdirSync(outside);fs.copyFileSync(path.join(n.pkg,'fixture.cjs'),path.join(outside,'escape.cjs'));
+  const redirected=path.join(n.pkg,'redirected');fs.symlinkSync(outside,redirected,'junction');
+  fs.writeFileSync(manifest,JSON.stringify({name:'@openai/codex',bin:{codex:'redirected/escape.cjs'}}));
+  assert.match(n.run(['--context']).stderr,/unsupported_provider_layout/);assert.equal(fs.existsSync(n.report),false);
+  fs.unlinkSync(redirected);fs.writeFileSync(manifest,original);
+  const missing=n.run(['--check','--node',path.join(root,'missing-node.exe')]);
+  assert.equal(missing.status,1);assert.match(missing.stdout,/Node runtime: unavailable/);assert.match(missing.stdout,/Memory store: readable/);
+  const self=n.run(['--check','--executable',exe]);assert.equal(self.status,1);assert.match(self.stdout,/provider_self_recursion/);
+  const old=path.join(n.bin,'old-node.cjs');fs.writeFileSync(old,"Object.defineProperty(process.versions,'node',{value:'22.0.0'});");
+  const result=spawnSync(exe,['--data-dir',f.dataDir,'native','codex','--check'],{
+    cwd:f.project,env:{...n.env,NODE_OPTIONS:'--require='+JSON.stringify(old)},encoding:'utf8',timeout:10000});
+  assert.equal(result.status,1);assert.match(result.stderr,/node_24_required/);assert.equal(fs.existsSync(n.report),false);
+});
 test('real read-only packet preserves requirements, provenance, scope and byte budget',()=>{
   const f=fixture(),before=fs.readFileSync(path.join(f.dataDir,'swapctx.db'));
   const result=adapter.retrieve(f.options,f.project);

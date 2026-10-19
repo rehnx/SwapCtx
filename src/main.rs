@@ -171,6 +171,7 @@ fn capabilities() {
     println!("Lifecycle: startup/resume/manual compaction passed a prior real-model pilot; natural automatic recovery unverified");
     println!("Native UIs: swapctx native codex|claude; optional --context uses capability-gated read-only SessionStart hooks");
     println!("Native hooks: adapter output tested offline only; provider receipt/adherence unverified; no capture or enforcement");
+    println!("Native health: native codex|claude --check; read-only local prerequisites and context, no provider probes");
     println!("Hidden model state: inaccessible; model use of delivered records is not guaranteed");
     println!("Sensitive values: limited heuristics and output hiding; storage is plaintext");
     println!("Rust network clients and telemetry: none; optional Codex commands use Codex's configured provider and history");
