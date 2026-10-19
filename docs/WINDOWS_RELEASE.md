@@ -114,6 +114,31 @@ Memory, backups and exports are plaintext; keep them in a suitably private folde
 Secret detection is heuristic. Context retrieval is external memory, not native
 model context expansion, guaranteed adherence, or file protection.
 
+## Native provider interfaces
+
+With a separately installed provider, keep its original terminal UI:
+
+```powershell
+& $SwapCtx native codex
+& $SwapCtx native claude
+# Explicitly expose selected project memory for this invocation:
+& $SwapCtx native codex --context
+& $SwapCtx native claude --context
+```
+
+The plain forms need no Node and share no SwapCtx context. The context forms
+need Node.js 24+ and the required hook capabilities. Windows native discovery
+requires the underlying `.exe`; use `--executable ABSOLUTE_PATH` if a shell shim
+is what your ordinary terminal command resolves to. Context mode also accepts
+`--node ABSOLUTE_PATH`. It never modifies provider settings or instruction files.
+
+An unsupported probe warns and opens the ordinary UI without context. Invalid
+or incomplete mandatory context fails closed. Hooks remain subject to provider
+trust/policy. Each permitted startup/resume/clear/compact/fork callback reads
+fresh memory; SwapCtx cannot establish that every provider emits those callbacks.
+Preparation and completed output are local observations, not proof of receipt,
+retention or model adherence. No exact native provider release is certified.
+
 ## Optional managed Codex console
 
 ```powershell

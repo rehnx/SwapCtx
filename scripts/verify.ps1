@@ -67,6 +67,8 @@ try {
         if (!(Test-Path -LiteralPath $taskNode)) { throw 'Context tests require Node.js 24 or newer' }
         & $taskNode scripts/third-party.cjs --check
         if ($LASTEXITCODE -ne 0) { throw 'Third-party notice verification failed' }
+        & $taskNode scripts/check-docs.cjs target/release/swapctx.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Documentation checks failed' }
         & $taskNode scripts/check-sql.cjs
         if ($LASTEXITCODE -ne 0) { throw 'SQL checks failed' }
         & $taskNode scripts/check-context.cjs target/release/swapctx.exe

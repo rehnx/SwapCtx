@@ -1,6 +1,7 @@
 'use strict';
 // Offline release recipe. Two fresh source/target directories; no agent processes.
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const {spawnSync} = require('node:child_process');
@@ -28,6 +29,8 @@ function build(destination, test = false) {
   delete env.RUSTFLAGS;
   const inputs = sourceInputs(root), buildTools = tools(root);
   const stage = fs.mkdtempSync(path.join(parent,'.swapctx-build-'));
+  const stageIdentity = fs.lstatSync(stage);
+  let work, workIdentity, failure;
   const binaryHashes = [], binaries = [];
   function run(args, cwd, buildEnv = env) {
     console.log('cargo '+args.join(' '));
@@ -35,8 +38,13 @@ function build(destination, test = false) {
     if (result.error || result.status !== 0) throw new Error(`Offline build failed (${result.status}): ${result.error?.message || 'see Cargo diagnostic'}`);
   }
   try {
+    // MSVC's C compiler can reject long /Fo paths even when Node/.NET accept
+    // them. Keep fresh compilation trees out of nested preview staging paths.
+    // Final assembly remains beside the destination for same-volume publication.
+    work = fs.mkdtempSync(path.join(os.tmpdir(),'swapctx-compile-'));
+    workIdentity = fs.lstatSync(work);
     for (const name of ['a','b']) {
-      const source = path.join(stage,'source-'+name), target = path.join(stage,'target-'+name);
+      const source = path.join(work,'source-'+name), target = path.join(work,'target-'+name);
       fs.mkdirSync(source);
       for (const input of inputs) {
         const bytes = fs.readFileSync(path.join(root,input.path));
@@ -68,9 +76,27 @@ function build(destination, test = false) {
     fs.renameSync(payload,output);
     console.log(`Verified matching offline builds: ${binaryHashes[0]}\nOutput: ${output}`);
     return receipt;
+  } catch (error) {
+    failure = error;
+    throw error;
   } finally {
-    if (path.dirname(stage) !== parent || !path.basename(stage).startsWith('.swapctx-build-')) throw new Error('Unsafe cleanup path');
-    fs.rmSync(stage,{recursive:true,force:true});
+    for (const [directory,owner,expectedParent,prefix] of [
+      [work,workIdentity,path.resolve(os.tmpdir()),'swapctx-compile-'],
+      [stage,stageIdentity,parent,'.swapctx-build-'],
+    ]) {
+      if (!directory) continue;
+      try {
+        const actual = fs.lstatSync(directory);
+        if (path.dirname(directory) !== expectedParent || !path.basename(directory).startsWith(prefix)
+            || actual.isSymbolicLink() || actual.dev !== owner.dev || actual.ino !== owner.ino) throw new Error('Unsafe cleanup path');
+        fs.rmSync(directory,{recursive:true,force:true});
+      } catch (error) {
+        if (!failure) failure = error;
+        else console.error('Additional build cleanup failure; originating error retained.');
+      }
+    }
+    // Preserve a build error; cleanup failures after success must also fail closed.
+    if (failure) throw failure;
   }
 }
 if (require.main === module) {

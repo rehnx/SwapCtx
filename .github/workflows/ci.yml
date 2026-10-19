@@ -53,6 +53,10 @@ jobs:
           node scripts/check-everyday.cjs $taskExecutable
           if ($LASTEXITCODE -ne 0) { throw 'Everyday integration checks failed' }
           if ($IsWindows) {
+            node scripts/check-docs.cjs $taskExecutable
+            if ($LASTEXITCODE -ne 0) { throw 'Documentation checks failed' }
+            node scripts/check-native.cjs $taskExecutable
+            if ($LASTEXITCODE -ne 0) { throw 'Native provider offline checks failed' }
             node scripts/third-party.cjs --check
             if ($LASTEXITCODE -ne 0) { throw 'Third-party notices are stale' }
             node scripts/check-package.cjs $taskExecutable

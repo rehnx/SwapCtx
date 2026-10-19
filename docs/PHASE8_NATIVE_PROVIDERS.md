@@ -1,5 +1,10 @@
 # Phase 8: native provider UIs
 
+The current portable candidate and release gates are recorded in
+[Phase 11 readiness](PHASE11_RELEASE_READINESS.md). The Phase 8 build results below
+remain historical; native hook receipt/adherence is still a separate live-provider
+verification boundary.
+
 SwapCtx can launch the original Codex or Claude Code terminal interface. The
 managed `swapctx codex ...` console remains available with its existing behavior.
 The native route is separate and does not implement a replacement chat console.

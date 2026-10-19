@@ -1,5 +1,11 @@
 # Portable Windows release engineering
 
+For the current producer procedure and candidate assessment, use
+[release preparation](RELEASE_PREPARATION.md) and
+[Phase 11 readiness](PHASE11_RELEASE_READINESS.md). This report describes the
+first historical candidate; its file counts and verification status are not
+claims about the current distribution.
+
 This report records the first candidate. The subsequent
 [preview distribution hardening](PREVIEW_DISTRIBUTION.md) adds verified local
 installation, a collected dependency notice bundle, and additional rejection

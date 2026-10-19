@@ -1,0 +1,283 @@
+{
+  "format_version": 1,
+  "phase": "11 professional presentation and final release preparation",
+  "verified_date": "2026-10-19",
+  "starting_head": "5679410853c0efe020b00a8b71eb4512c072354e",
+  "starting_worktree": "clean",
+  "status": "local_candidate_verified_public_release_not_approved",
+  "platform": "Windows x64",
+  "node_version": "24.17.0",
+  "rust_toolchain": "1.99.0",
+  "preparation": {
+    "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-preview.ps1 -Destination .build/phase11-preview",
+    "exit_code": 0,
+    "existing_build_reused": false,
+    "steps": [
+      "foundation_offline",
+      "independent_release_builds_and_native_tests",
+      "receipt_checked_packaging",
+      "check-context.cjs",
+      "check-session.cjs",
+      "check-everyday.cjs",
+      "check-native.cjs",
+      "check-package.cjs",
+      "static_imports_and_command_discovery",
+      "receipt_failure_regressions",
+      "recipient_powershell_only_acceptance"
+    ]
+  },
+  "first_attempt": {
+    "exit_code": 1,
+    "candidate_created": false,
+    "originating_failure": "MSVC C1083 writing bundled SQLite compiler output beneath deeply nested staging",
+    "path_probe": {
+      "status": "confirmed",
+      "compiler": "MSVC 14.51.36231",
+      "short": {
+        "characters": 71,
+        "exit_code": 0,
+        "object_created": true
+      },
+      "deep": {
+        "characters": 306,
+        "exit_code": 1,
+        "object_created": false,
+        "error": "C1083: compiler-generated output cannot be opened"
+      },
+      "model_calls": 0
+    },
+    "fix": "Fresh compile trees in owned system TEMP; destination-adjacent final assembly; ownership-checked cleanup preserves originating errors",
+    "rerun_same_producer_command": true
+  },
+  "foundation": {
+    "formatting": "passed",
+    "clippy_all_targets_deny_warnings": "passed",
+    "debug_rust": {
+      "passed": 55,
+      "ignored": 1
+    },
+    "release_rust": {
+      "passed": 55,
+      "ignored": 1
+    },
+    "release_build": "passed",
+    "schema": 10,
+    "context": 23,
+    "session": 23,
+    "everyday": 28,
+    "native": 33,
+    "package_installer": 19,
+    "pe_and_path": 4,
+    "offline_oracle_fixtures": 12,
+    "supplemental_total_excluding_docs": 152
+  },
+  "static_candidate": {
+    "independent_builds": 2,
+    "matching_binary_sha256": "f37e809984ab00e3f5a33997e27b9bf3e9c098be8639934edaa1f0f7a78f405d",
+    "rust_tests": {
+      "passed": 55,
+      "ignored": 1
+    },
+    "context": 23,
+    "session": 23,
+    "everyday": 28,
+    "native": 33,
+    "package_installer": 19,
+    "pe_and_path": 4,
+    "receipt_rejections": 7,
+    "recipient_acceptance": 16,
+    "recipe": "static-crt-brepro-v1",
+    "dynamic_crt_imports": [],
+    "source_fingerprint": "d7adeb539423ab38029b15a81b1317f77ae0e62750e6ffef10750aef084f5de3",
+    "complete_source_and_tool_inventory": "matched current local files",
+    "native_adapter_in_source_inventory": true,
+    "owned_compile_tree_removed": true
+  },
+  "candidate": {
+    "directory": ".build/phase11-preview",
+    "version": "0.1.0",
+    "target": "x86_64-pc-windows-msvc",
+    "files": [
+      {
+        "path": "SHA256SUMS.txt",
+        "sha256": "cacb51fd7d6458351bfea796965f9ff973c10c606d4f6224813f236d91d87a64",
+        "bytes": 531
+      },
+      {
+        "path": "build-info.json",
+        "sha256": "6ac39792abf9d3976ef5bf485d49e516fd69b41022fd91a5f1f77d8e8f642b1f",
+        "bytes": 5403
+      },
+      {
+        "path": "install-windows.ps1",
+        "sha256": "1adcccab6478d9be15430f65a6d27f971057700031d59e14d844bab003184484",
+        "bytes": 10330
+      },
+      {
+        "path": "release-checks.json",
+        "sha256": "13ad2f49ea4ea6dd00f65a9147ee879f723dbc6ae35d0922c0f3459127d8de6a",
+        "bytes": 1175
+      },
+      {
+        "path": "swapctx-0.1.0-windows-x64.zip",
+        "sha256": "bd194942e6eb66fd3aa4f460ab5b0be6fb8934ebb3288609a5c6072892bdc7ba",
+        "bytes": 2077967
+      },
+      {
+        "path": "test-windows-preview.ps1",
+        "sha256": "1f4deeeb9839c81045711f49a39c0127c3128484b734870de9618b3018b3165c",
+        "bytes": 12339
+      },
+      {
+        "path": "windows-acceptance.json",
+        "sha256": "015ea1a0dbbd88a2b13c76a12039c61750f25e56271f50783658cf429a3551d8",
+        "bytes": 1579
+      }
+    ],
+    "zip_payload": [
+      {
+        "path": "swapctx.exe",
+        "sha256": "f37e809984ab00e3f5a33997e27b9bf3e9c098be8639934edaa1f0f7a78f405d",
+        "bytes": 4546560
+      },
+      {
+        "path": "LICENSE",
+        "sha256": "1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6",
+        "bytes": 11558
+      },
+      {
+        "path": "QUICKSTART.md",
+        "sha256": "a65dbfe0ebc825ac1a13249b130fd894627a310c9030ebba7df5cb0ba769554f",
+        "bytes": 10700
+      },
+      {
+        "path": "DEPENDENCIES.md",
+        "sha256": "2570d6d8524c6cf1e1e80f240c42911e2fef3cefe41bd350a3ab4d950f26cd28",
+        "bytes": 2543
+      },
+      {
+        "path": "Cargo.lock",
+        "sha256": "e4638eca22170289eb1ca5f26b209bea0b8ca1c7905b1759f6dcca71ce6c64b7",
+        "bytes": 15402
+      },
+      {
+        "path": "THIRD_PARTY_NOTICES.txt",
+        "sha256": "5e50d30f971ad34df946e8144454a370b30c5f609ae40ff242a3becec04f9f3a",
+        "bytes": 516081
+      },
+      {
+        "path": "third-party-inventory.json",
+        "sha256": "b33f35ccea7f983843c2c49cf5f02a671a380bcaae83a6897c30166cb9092f68",
+        "bytes": 28948
+      }
+    ],
+    "outer_checksums_verified": 6,
+    "zip_manifest_and_build_identity": "passed"
+  },
+  "documentation": {
+    "check": "documentation",
+    "ok": true,
+    "files": 12,
+    "local_links": 57,
+    "fenced_blocks": 28,
+    "powershell_syntax": "passed",
+    "readme_core_commands_executed": 12,
+    "provider_examples_help_only": 6,
+    "mermaid": "restricted flowchart syntax and references checked; GitHub rendering unverified",
+    "external_links": "not fetched",
+    "real_provider_launches": 0
+  },
+  "licensing": {
+    "project": "Apache-2.0",
+    "license_unchanged": true,
+    "locked_windows_dependency_packages": 49,
+    "generated_notices_and_inventory": "passed",
+    "legal_clearance_claimed": false
+  },
+  "advisories": {
+    "offline_database_checked": [
+      "%USERPROFILE%/.cargo/advisory-db",
+      ".build/cargo-home/advisory-db",
+      "%LOCALAPPDATA%/rustsec/advisory-db"
+    ],
+    "current_database_available": false,
+    "online_review_performed": false,
+    "current_vulnerability_clearance": false
+  },
+  "changed_file_sha256": {
+    "README.md": "88ab1a4b310eeae53463751100a0c21527f57ab88605f854ec94cfb44a7ebc04",
+    "CONTRIBUTING.md": "31ef503248cd7cadd924d8fad50f58bd6def4a5b8f29ef458233d046194f6ffb",
+    "SECURITY.md": "74471a485e5307e286cfff510a152ac26807eeaf3a84ec8049f5f87aa70449d5",
+    "SUPPORT.md": "6bebf9f1c2a79a5881980c9f8b07ad25ff2e7650486e0a11d7fd81a238caebdb",
+    "CHANGELOG.md": "140ea29f3dcad93da559f304f6e97004428b90222884041ee07f434f00c9d026",
+    ".github/ISSUE_TEMPLATE/bug_report.md": "8eedd58506831e0c81f369f3d2552498bd565d189a3209351e483e7121d5df20",
+    ".github/ISSUE_TEMPLATE/feature_request.md": "ae68ca2dba0dcb9c48b66b6e448d85db371d13b411d5d300c8d3612c8984701b",
+    ".github/pull_request_template.md": "4191b55c19378a85c5d097b37c5830e27f12f8ff6093bc0ed731e1706520acd6",
+    ".github/workflows/ci.yml": "f22254bb3d2309230455c84f82ef690a2e0a16c96fc4a02a9be39d50a54d7a76",
+    "scripts/verify.ps1": "0d843485f73db6a5b77d3df44cdedce9ca61275bd8c7d0e84cc4aeaf91db2dce",
+    "scripts/check-docs.cjs": "06dbcb299fd0c7c0e9bb23f8197c0de58e11a36bf731b443fc2ac70f1f72ffc8",
+    "scripts/build-windows.cjs": "d71fe49e9fcfcdf1e8df5f1bbe85f44a3a30cd172d2148d0e89e0a553338dcb5",
+    "docs/USAGE.md": "2a33018e3e1c4c92b35afc108ae4c5d0f781d09e76d4595e2c0705ed04494704",
+    "docs/RELEASE_PREPARATION.md": "6b507d1b0311e442b0bd3fe70b1abd84160696b36be66c0f3b0fb94998b25920",
+    "docs/PHASE11_RELEASE_READINESS.md": "1229fae366be3ae13d28142977b0588740f283811b34ad189bddf1fd0abd2e1a",
+    "docs/WINDOWS_RELEASE.md": "a65dbfe0ebc825ac1a13249b130fd894627a310c9030ebba7df5cb0ba769554f",
+    "docs/PHASE8_NATIVE_PROVIDERS.md": "b607dd358303a04b36e2a66b0b292614ad3e474a220c5373ad953ecf063a81e8",
+    "docs/WINDOWS_RELEASE_ENGINEERING.md": "ff930f465cb90af503b90ccff03a3e89969645d24e3489abe9301306f4325d3b"
+  },
+  "local_evidence_sha256": {
+    ".build/phase11-preview.stdout.log": "1bddf8a6b4741b16fc1f6321aaf630c37f882bea10babb822eba893b3e07fcb3",
+    ".build/phase11-preview.stderr.log": "d7ce5da32217c546886a1ea3b5c065efafbb6135f4f7c6a3dc26ea3d19a21780",
+    ".build/phase11-first-attempt.stdout.log": "5a40dd91df864a0a8ecee255b5c54cd41e9e7d0ad3a8ea3019f064eeeeda9f26",
+    ".build/phase11-first-attempt.stderr.log": "c76dba8e1ac96c1ad483c7922aa1d61e66a42460220b2406d138642bb9caf976",
+    ".build/phase11-path-probe.json": "a5bb94f072b35f8af2db76eb5c9f78cd4eeafad75f2cbf30edb5b29cbb009da4",
+    ".build/phase11-artifact-inspection.json": "4f9ed8d977027d676a0a630b45f673895bac8843dcdaa4087bb4b0c029651fe2",
+    ".build/phase11-docs-final.json": "c1d8c6877db3d63c9f63d97f4beaa0050a4398f239916f5ec7f66ed0ca4edb28"
+  },
+  "preserved": {
+    "application_rust_and_adapter_sources": true,
+    "cargo_dependencies": true,
+    "sqlite_schema": true,
+    "cli_interfaces": true,
+    "license_and_required_notices": true,
+    "user_stores": true,
+    "provider_configuration": true
+  },
+  "restrictions": {
+    "real_provider_launches": 0,
+    "authenticated_sessions": 0,
+    "inference_calls": 0,
+    "network_dependent_tests": 0,
+    "model_evaluations": 0,
+    "soak_tests": 0,
+    "remote_mutations": 0,
+    "committed": false,
+    "published": false
+  },
+  "external_verification": {
+    "hosted_ci": "not dispatched or fetched; source prepared only",
+    "clean_machine": "not performed; recipient acceptance ran locally with developer tools removed from process PATH",
+    "publisher_signing": "unsigned; no authenticated provenance",
+    "cross_machine_reproducibility": "unverified",
+    "native_provider_receipt": "unknown",
+    "model_adherence": "unknown",
+    "github_theme_mobile_mermaid_rendering": "not rendered; Markdown and constrained diagram syntax checked locally",
+    "external_markdown_urls": "not fetched"
+  },
+  "release_decision": {
+    "local_preparation": "go",
+    "public_publication": "no-go pending maintainer review and release gates",
+    "high_priority": [
+      "Current dependency advisory review",
+      "Establish and verify private vulnerability intake"
+    ],
+    "medium_priority": [
+      "Review hosted and independent Windows acceptance evidence",
+      "Choose signing or explicit unsigned-preview risk acceptance"
+    ],
+    "approval_required": [
+      "Any push, tag, release, upload, visibility change or package submission",
+      "Hosted workflow dispatch and network-dependent validation",
+      "Any future live-provider evaluation"
+    ]
+  }
+}
