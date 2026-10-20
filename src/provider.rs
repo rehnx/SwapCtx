@@ -48,20 +48,50 @@ fn choice(input: &str) -> Result<Choice> {
 }
 
 /// No arguments launches only in a real terminal; piping to it must not launch an agent.
+#[allow(dead_code)]
 pub fn select_and_launch(launch: impl FnOnce(Provider) -> Result<u8>) -> Result<u8> {
+    select_and_launch_with_info(None, launch)
+}
+
+/// Interactive provider selection with optional project information display.
+pub fn select_and_launch_with_info(
+    info: Option<(&Path, i64, i64)>,
+    launch: impl FnOnce(Provider) -> Result<u8>,
+) -> Result<u8> {
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         bail!("Provider selection needs an interactive terminal; use `swapctx launch codex` or `swapctx launch claude`");
     }
-    println!("SwapCtx — choose your coding agent\n");
-    println!("  1  Codex");
-    println!("  2  Claude Code");
-    println!("  q  Quit (or press Enter)\n");
-    print!("Select: ");
+    crate::display::print_banner();
+    println!();
+    crate::display::print_project_info(info);
+
+    if crate::display::is_color_enabled() {
+        println!("  \x1b[1mChoose your coding agent:\x1b[0m\n");
+        println!(
+            "    \x1b[1;96m[1]\x1b[0m \x1b[1mCodex\x1b[0m        \x1b[90mOpenAI Codex CLI\x1b[0m"
+        );
+        println!("    \x1b[1;96m[2]\x1b[0m \x1b[1mClaude Code\x1b[0m  \x1b[90mAnthropic Claude Code CLI\x1b[0m");
+        println!("    \x1b[90m[q] Quit         Exit SwapCtx\x1b[0m\n");
+        print!(
+            "  \x1b[1;92m?\x1b[0m \x1b[1mSelect an option \x1b[90m[1-2, q]\x1b[0m\x1b[1m:\x1b[0m "
+        );
+    } else {
+        println!("SwapCtx — choose your coding agent\n");
+        println!("  1  Codex");
+        println!("  2  Claude Code");
+        println!("  q  Quit (or press Enter)\n");
+        print!("Select: ");
+    }
     io::stdout().flush()?;
     let mut answer = String::new();
     io::stdin().read_line(&mut answer)?;
     match choice(&answer)? {
-        Choice::Quit => Ok(0),
+        Choice::Quit => {
+            if crate::display::is_color_enabled() {
+                println!("  \x1b[90mGoodbye!\x1b[0m");
+            }
+            Ok(0)
+        }
         Choice::Provider(provider) => launch(provider),
     }
 }

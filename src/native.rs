@@ -373,20 +373,60 @@ pub fn execute(data_dir: Option<PathBuf>, options: Options) -> Result<u8> {
 }
 
 pub fn menu(data_dir: Option<PathBuf>) -> Result<u8> {
-    crate::provider::select_and_launch(|provider| {
+    let project_info = (|| -> Option<(PathBuf, i64, i64)> {
+        let db_path = crate::storage_path(data_dir.clone()).ok()?;
+        if !db_path.exists() {
+            return None;
+        }
+        let conn = crate::storage::open(&db_path, false, false).ok()?;
+        let cwd = std::env::current_dir().ok()?.canonicalize().ok()?;
+        let (id, root) = crate::storage::project(&conn, &cwd).ok()?;
+        let rules: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rules WHERE project_id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let memories: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM memories WHERE project_id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        Some((root, memories, rules))
+    })();
+
+    let info_ref = project_info.as_ref().map(|(p, m, r)| (p.as_path(), *m, *r));
+
+    crate::provider::select_and_launch_with_info(info_ref, |provider| {
         let provider = match provider {
             crate::provider::Provider::Codex => Provider::Codex,
             crate::provider::Provider::Claude => Provider::Claude,
         };
-        print!("Expose selected SwapCtx project memory to this provider? [y/N]: ");
+        if crate::display::is_color_enabled() {
+            print!("  \x1b[1;93m?\x1b[0m \x1b[1mExpose selected SwapCtx project memory to this provider? \x1b[90m[y/N]\x1b[0m\x1b[1m:\x1b[0m ");
+        } else {
+            print!("Expose selected SwapCtx project memory to this provider? [y/N]: ");
+        }
         io::stdout().flush()?;
         let mut answer = String::new();
         io::stdin().read_line(&mut answer)?;
+        let context = answer.trim().eq_ignore_ascii_case("y");
+        if crate::display::is_color_enabled() {
+            if context {
+                println!("  \x1b[1;92m✓\x1b[0m \x1b[32mContext memory injection enabled\x1b[0m");
+            } else {
+                println!("  \x1b[90m○ Standard mode (no context memory injected)\x1b[0m");
+            }
+            println!("  \x1b[90m→ Launching {}...\x1b[0m\n", provider.name());
+        }
         execute(
             data_dir,
             Options {
                 provider,
-                context: answer.trim().eq_ignore_ascii_case("y"),
+                context,
                 check: false,
                 executable: None,
                 node: None,
