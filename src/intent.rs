@@ -228,18 +228,17 @@ fn pin(conn: &mut Connection, project: i64, id: i64) -> Result<()> {
 
     let (kind, state, validity) = row;
 
-    // Restrict pin operations to valid, active lifecycle records
+    // Restrict pin operations to valid, active lifecycle records of requirement or intent kind
     if validity != "valid" {
         bail!("Cannot pin memory #{id}: record is currently marked invalid");
     }
     if state != "active" {
         bail!("Cannot pin memory #{id}: record is currently in '{state}' state (only active records can be pinned)");
     }
-    if !matches!(
-        kind.as_str(),
-        "requirement" | "intent" | "decision" | "note"
-    ) {
-        bail!("Cannot pin memory #{id}: record kind '{kind}' cannot be pinned");
+    if !matches!(kind.as_str(), "requirement" | "intent") {
+        bail!(
+            "Cannot pin memory #{id}: only 'requirement' records can be promoted to permanent project intent directives (found '{kind}')"
+        );
     }
 
     let now = crate::memory::now()?;
@@ -277,23 +276,34 @@ fn retire(conn: &mut Connection, project: i64, id: i64, reason: &str) -> Result<
 
     let row = tx
         .query_row(
-            "SELECT coalesce(d.state, 'active'), coalesce(d.validity, 'valid')
+            "SELECT m.kind, coalesce(d.state, 'active'), coalesce(d.validity, 'valid')
          FROM memories m
          LEFT JOIN memory_metadata d ON d.memory_id = m.id
          WHERE m.id = ?1 AND m.project_id = ?2",
             params![id, project],
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            },
         )
         .optional()?
         .context("Memory record not found in this project")?;
 
-    let (state, validity) = row;
+    let (kind, state, validity) = row;
 
     if validity == "invalid" {
         bail!("Memory #{id} is already retired / invalid");
     }
     if state != "active" {
         bail!("Cannot retire memory #{id}: record is currently in '{state}' state");
+    }
+    if !matches!(kind.as_str(), "requirement" | "intent") {
+        bail!(
+            "Cannot retire memory #{id}: only project intent / requirement directives can be retired (found '{kind}')"
+        );
     }
 
     tx.execute(

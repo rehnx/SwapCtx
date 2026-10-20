@@ -188,7 +188,27 @@ fn test_intent_lifecycle_guards_reject_invalid_transitions() {
         0,
     );
 
-    // Invalidate it
+    // Add a note
+    s.run(
+        &[
+            "memory",
+            "add",
+            "--kind",
+            "note",
+            "Consider caching parsed certificates",
+        ],
+        0,
+    );
+
+    // Attempting to pin a 'note' as an intent directive MUST FAIL (intent-kind restriction)
+    let err_pin_note = stderr(s.run(&["intent", "pin", "2"], 1));
+    assert!(err_pin_note.contains("only 'requirement' records can be promoted"));
+
+    // Attempting to retire a 'note' via intent retire MUST FAIL
+    let err_retire_note = stderr(s.run(&["intent", "retire", "2", "--reason", "Not needed"], 1));
+    assert!(err_retire_note.contains("only project intent / requirement directives can be retired"));
+
+    // Invalidate requirement #1
     s.run(
         &[
             "memory",
@@ -268,6 +288,128 @@ fn test_inspect_worktree_boundary_rules() {
 }
 
 #[test]
+fn test_nul_delimited_git_status_and_renames() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+
+    // Add protection rule on internal auth paths
+    s.run(
+        &[
+            "protect",
+            "add",
+            "--path",
+            "internal/auth/**",
+            "--reason",
+            "Protected authentication core",
+            "--policy",
+            "deny",
+        ],
+        0,
+    );
+
+    // Commit a file under internal/auth
+    let auth_dir = s.project.join("internal").join("auth");
+    fs::create_dir_all(&auth_dir).unwrap();
+    fs::write(auth_dir.join("token.rs"), "// token engine").unwrap();
+
+    Command::new("git")
+        .current_dir(&s.project)
+        .args(["add", "internal/auth/token.rs"])
+        .output()
+        .unwrap();
+    Command::new("git")
+        .current_dir(&s.project)
+        .args(["commit", "-m", "add auth token"])
+        .output()
+        .unwrap();
+
+    // Now rename protected file to an unprotected location via git mv
+    let public_dir = s.project.join("public");
+    fs::create_dir_all(&public_dir).unwrap();
+    Command::new("git")
+        .current_dir(&s.project)
+        .args(["mv", "internal/auth/token.rs", "public/token.rs"])
+        .output()
+        .unwrap();
+
+    // Inspect: must catch the violation via orig_path even though destination is 'public/'
+    let inspect_out = stdout(s.run(&["inspect"], 1));
+    assert!(inspect_out.contains("[VIOLATION: DENY]"));
+    assert!(inspect_out.contains("renamed from internal/auth/token.rs"));
+    assert!(inspect_out.contains("Rule #1: policy=deny"));
+
+    // Test file with spaces in directory and filename
+    let spaced_dir = s.project.join("my spaced folder");
+    fs::create_dir_all(&spaced_dir).unwrap();
+    fs::write(spaced_dir.join("my spaced file.rs"), "// spaced").unwrap();
+
+    let spaced_out = stdout(s.run(
+        &["inspect", "--path", "my spaced folder/my spaced file.rs"],
+        0,
+    ));
+    assert!(spaced_out.contains("my spaced folder/my spaced file.rs"));
+
+    // Test directory pathspec without discarding nested changes
+    fs::write(spaced_dir.join("nested_a.rs"), "// a").unwrap();
+    fs::write(spaced_dir.join("nested_b.rs"), "// b").unwrap();
+    let dir_out = stdout(s.run(&["inspect", "--path", "my spaced folder"], 0));
+    assert!(dir_out.contains("my spaced folder/nested_a.rs"));
+    assert!(dir_out.contains("my spaced folder/nested_b.rs"));
+    assert!(dir_out.contains("my spaced folder/my spaced file.rs"));
+}
+
+#[test]
+fn test_secret_safe_diff_preview() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+
+    // Protect config files with an 'ask' policy
+    s.run(
+        &[
+            "protect",
+            "add",
+            "--path",
+            "config/**",
+            "--reason",
+            "Configuration audit",
+            "--policy",
+            "ask",
+        ],
+        0,
+    );
+
+    // Commit baseline config
+    let config_dir = s.project.join("config");
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::write(config_dir.join("app.env"), "PORT=8080\n").unwrap();
+
+    Command::new("git")
+        .current_dir(&s.project)
+        .args(["add", "config/app.env"])
+        .output()
+        .unwrap();
+    Command::new("git")
+        .current_dir(&s.project)
+        .args(["commit", "-m", "baseline config"])
+        .output()
+        .unwrap();
+
+    // Agent modifies file adding an AWS secret key
+    fs::write(
+        config_dir.join("app.env"),
+        "PORT=8080\nAPI_KEY = AKIAIOSFODNN7EXAMPLE\n",
+    )
+    .unwrap();
+
+    // Inspect with --diff flag (fails with exit code 1 because sensitive token was detected in file)
+    let diff_out = stdout(s.run(&["inspect", "--diff"], 1));
+    // Verify plaintext secret was REDACTED in diff preview!
+    assert!(!diff_out.contains("AKIAIOSFODNN7EXAMPLE"));
+    assert!(diff_out.contains("[potential sensitive value hidden]"));
+    assert!(diff_out.contains("Secret-safe preview active"));
+}
+
+#[test]
 fn test_git_unavailable_or_non_repo_fails_closed() {
     let s = Sandbox::new_non_git();
     s.run(&["init"], 0);
@@ -298,10 +440,6 @@ fn test_state_fingerprint_determinism_and_sensitivity() {
         0,
     );
 
-    // 1. Two consecutive verify calls on identical state must produce IDENTICAL fingerprints
-    let out1 = stdout(s.run(&["verify", "--attest"], 0));
-    let out2 = stdout(s.run(&["verify", "--attest"], 0));
-
     let extract_hash = |out: &str| -> String {
         out.lines()
             .find(|l| l.starts_with("Attestation Manifest:"))
@@ -312,15 +450,18 @@ fn test_state_fingerprint_determinism_and_sensitivity() {
             .to_string()
     };
 
+    // 1. Two consecutive verify calls on identical state must produce IDENTICAL fingerprints
+    let out1 = stdout(s.run(&["verify", "--attest"], 0));
+    let out2 = stdout(s.run(&["verify", "--attest"], 0));
     let fp1 = extract_hash(&out1);
     let fp2 = extract_hash(&out2);
     assert_eq!(
         fp1, fp2,
         "Identical states must produce identical canonical fingerprints"
     );
-    assert!(fp1.starts_with("attest:swapctx:v1:pass:1:0:"));
+    assert!(fp1.starts_with("attest:swapctx:v2:sha256:pass:1:0:"));
 
-    // 2. Meaningful state change (adding a rule) MUST alter the fingerprint
+    // 2. Meaningful DB change (adding a rule) MUST alter the fingerprint
     s.run(
         &[
             "protect",
@@ -339,9 +480,252 @@ fn test_state_fingerprint_determinism_and_sensitivity() {
     let fp3 = extract_hash(&out3);
     assert_ne!(
         fp1, fp3,
-        "State change must alter the canonical fingerprint"
+        "Rule state change must alter the canonical fingerprint"
     );
-    assert!(fp3.starts_with("attest:swapctx:v1:pass:1:1:"));
+    assert!(fp3.starts_with("attest:swapctx:v2:sha256:pass:1:1:"));
+
+    // 3. Worktree change (uncommitted modified file) MUST alter the fingerprint!
+    fs::write(
+        s.project.join("dirty.txt"),
+        "uncommitted worktree modification 1",
+    )
+    .unwrap();
+    let out4 = stdout(s.run(&["verify", "--attest"], 0));
+    let fp4 = extract_hash(&out4);
+    assert_ne!(
+        fp3, fp4,
+        "Uncommitted worktree changes must alter the canonical state fingerprint"
+    );
+
+    // 4. Content edit to an already-modified file with UNCHANGED git status MUST alter the fingerprint!
+    fs::write(
+        s.project.join("dirty.txt"),
+        "uncommitted worktree modification 2 - altered file content",
+    )
+    .unwrap();
+    let out4_b = stdout(s.run(&["verify", "--attest"], 0));
+    let fp4_b = extract_hash(&out4_b);
+    assert_ne!(
+        fp4, fp4_b,
+        "Editing content of an already modified file must alter the canonical fingerprint"
+    );
+
+    // 5. Memory metadata change (updating expiry) MUST alter the fingerprint!
+    s.db()
+        .execute(
+            "UPDATE memory_metadata SET expires_at = 2000000000 WHERE memory_id = 1",
+            [],
+        )
+        .unwrap();
+    let out5 = stdout(s.run(&["verify", "--attest"], 0));
+    let fp5 = extract_hash(&out5);
+    assert_ne!(
+        fp4_b, fp5,
+        "Memory lifecycle/expiry update must alter the canonical state fingerprint"
+    );
+}
+
+#[test]
+fn test_handoff_conflict_detection_and_structural_matching() {
+    let s1 = Sandbox::new();
+    s1.run(&["init"], 0);
+
+    // Add an approved requirement
+    s1.run(
+        &[
+            "intent",
+            "add",
+            "Primary database is PostgreSQL 16",
+            "--key",
+            "db:primary",
+        ],
+        0,
+    );
+
+    let bundle_file = s1.project.join("db-handoff.json");
+    let bundle_str = bundle_file.to_str().unwrap();
+
+    // Export clean handoff bundle
+    s1.run(
+        &["handoff", "export", bundle_str, "--target", "db-agent"],
+        0,
+    );
+
+    // Sandbox 2 has a competing active record sharing key "db:primary" with DIFFERENT content
+    let s2 = Sandbox::new();
+    s2.run(&["init"], 0);
+    s2.run(
+        &[
+            "intent",
+            "add",
+            "Primary database is MySQL 8",
+            "--key",
+            "db:primary",
+        ],
+        0,
+    );
+
+    // 1. Previewing bundle in s2 MUST detect and flag the key conflict
+    let prev_out = stdout(s2.run(&["handoff", "preview", bundle_str], 0));
+    assert!(prev_out.contains("[CONFLICT: key \"db:primary\" competes with existing #1]"));
+    assert!(prev_out.contains("Competing key conflicts detected:                 1"));
+
+    // 2. Applying bundle in s2 MUST fail and reject atomically due to key conflict!
+    let err_apply = stderr(s2.run(&["handoff", "apply", bundle_str], 1));
+    assert!(err_apply.contains("Handoff rejected due to key conflict"));
+    assert!(err_apply.contains("incoming key competes with active record #1"));
+
+    // Verify atomic rollback in s2: database still only has 1 memory (the original MySQL 8)
+    let count: i64 = s2
+        .db()
+        .query_row("SELECT count(*) FROM memories", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 1);
+    let content: String = s2
+        .db()
+        .query_row("SELECT content FROM memories WHERE id = 1", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(content, "Primary database is MySQL 8");
+
+    // 3. Applying identical bundle on s1 (exact structural match) succeeds and skips duplicate
+    let apply_s1 = stdout(s1.run(&["handoff", "apply", bundle_str], 0));
+    assert!(apply_s1.contains("Imported requirements & intent: 0"));
+    assert!(apply_s1.contains("Structurally matched (already present): 1"));
+
+    // 4. Exporting from a project with active conflicts must EXCLUDE conflicted records
+    // In s2, add a second competing requirement on key "db:primary" so it has an internal conflict
+    s2.run(
+        &[
+            "intent",
+            "add",
+            "Primary database is Aurora",
+            "--key",
+            "db:primary",
+        ],
+        0,
+    );
+    let conflicted_export = s2.project.join("conflicted-export.json");
+    let exp_conf_out = stdout(s2.run(
+        &["handoff", "export", conflicted_export.to_str().unwrap()],
+        0,
+    ));
+    assert!(exp_conf_out.contains("Approved requirements & intent: 0"));
+}
+
+#[test]
+fn test_handoff_internal_bundle_conflict_and_rule_collision() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+
+    // 1. Internal duplicate key conflict inside the bundle itself
+    let internal_conflict_bundle = s.project.join("internal-conflict.json");
+    fs::write(
+        &internal_conflict_bundle,
+        r#"{
+            "protocol": "swapctx.handoff",
+            "version": 1,
+            "target": "agent",
+            "items_count": 2,
+            "rules_count": 0,
+            "memories": [
+                {"id": 1, "kind": "requirement", "content": "Use Redis for caching", "key": "cache:engine"},
+                {"id": 2, "kind": "requirement", "content": "Use Memcached for caching", "key": "cache:engine"}
+            ],
+            "rules": []
+        }"#,
+    )
+    .unwrap();
+
+    let err_internal = stderr(s.run(
+        &[
+            "handoff",
+            "apply",
+            internal_conflict_bundle.to_str().unwrap(),
+        ],
+        1,
+    ));
+    assert!(err_internal.contains("Bundle contains internal key conflict"));
+    assert!(!err_internal.contains("cache:engine"));
+
+    // DB must remain clean (0 memories)
+    let count: i64 = s
+        .db()
+        .query_row("SELECT count(*) FROM memories", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 0);
+
+    // 2. Existing rule pattern conflict with differing policy or reason
+    s.run(
+        &[
+            "protect",
+            "add",
+            "--path",
+            "migrations/**",
+            "--reason",
+            "Human approval required for schema changes",
+            "--policy",
+            "ask",
+        ],
+        0,
+    );
+
+    let rule_conflict_bundle = s.project.join("rule-conflict.json");
+    fs::write(
+        &rule_conflict_bundle,
+        r#"{
+            "protocol": "swapctx.handoff",
+            "version": 1,
+            "target": "agent",
+            "items_count": 0,
+            "rules_count": 1,
+            "memories": [],
+            "rules": [
+                {"pattern": "migrations/**", "reason": "Automated migrations allowed", "policy": "deny"}
+            ]
+        }"#,
+    )
+    .unwrap();
+
+    // Preview flags rule conflict
+    let prev_rule = stdout(s.run(
+        &["handoff", "preview", rule_conflict_bundle.to_str().unwrap()],
+        0,
+    ));
+    assert!(prev_rule.contains("[CONFLICT: pattern collides with differing policy/reason]"));
+
+    // Apply rejects rule pattern collision atomically
+    let err_rule = stderr(s.run(
+        &["handoff", "apply", rule_conflict_bundle.to_str().unwrap()],
+        1,
+    ));
+    assert!(err_rule.contains("Handoff rejected due to rule conflict"));
+    assert!(err_rule.contains("conflicts with existing rule #1"));
+
+    // 3. Exact matching rule in bundle is accepted and deduplicated
+    let rule_match_bundle = s.project.join("rule-match.json");
+    fs::write(
+        &rule_match_bundle,
+        r#"{
+            "protocol": "swapctx.handoff",
+            "version": 1,
+            "target": "agent",
+            "items_count": 0,
+            "rules_count": 1,
+            "memories": [],
+            "rules": [
+                {"pattern": "migrations/**", "reason": "Human approval required for schema changes", "policy": "ask"}
+            ]
+        }"#,
+    )
+    .unwrap();
+
+    let ok_rule = stdout(s.run(
+        &["handoff", "apply", rule_match_bundle.to_str().unwrap()],
+        0,
+    ));
+    assert!(ok_rule.contains("Imported boundary rules:       0"));
 }
 
 #[test]
@@ -370,7 +754,7 @@ fn test_handoff_malformed_input_and_atomic_rollback() {
 
     // Applying malformed bundle must fail
     let err_apply = stderr(s.run(&["handoff", "apply", bad_bundle.to_str().unwrap()], 1));
-    assert!(err_apply.contains("Invalid memory kind 'malicious_injected_kind'"));
+    assert!(err_apply.contains("Invalid memory kind"));
 
     // Atomic rollback check: Database MUST have 0 memories (neither record was committed!)
     let count: i64 = s
@@ -511,6 +895,46 @@ fn test_explain_context_delivery_decisions() {
     let exp1_after = stdout(s.run(&["explain", "--id", "1"], 0));
     assert!(exp1_after.contains("DELIVERED IN CONTEXT"));
 
+    // Regression test: prove unrelated IDs and substring tricks cannot produce false inclusion.
+    // Record #1 exists and is in the packet.
+    // Add memory #3 whose content contains the substring `"id":"999"`, but record #999 does not exist.
+    s.run(
+        &[
+            "memory",
+            "add",
+            "--kind",
+            "requirement",
+            "Text mentioning dummy payload: {\"id\":\"999\"}",
+        ],
+        0,
+    );
+    // Explaining non-existent record #999 must fail with record not found, not report DELIVERED.
+    let err_999 = stderr(s.run(&["explain", "--id", "999"], 1));
+    assert!(err_999.contains("Memory record not found in this project"));
+
+    // Add record #4 with ID 10+ (e.g. #4 contains "id": "1", but #4 itself has ID 4).
+    // Now add an expired note with ID 5 whose text contains `"id":"1"`.
+    // Explaining record #5 must report OMITTED (expired), never falsely claiming DELIVERED due to substring match on record #1.
+    s.run(
+        &[
+            "memory",
+            "add",
+            "--kind",
+            "note",
+            "Referencing upstream record \"id\":\"1\" in audit notes",
+        ],
+        0,
+    );
+    s.db()
+        .execute(
+            "UPDATE memory_metadata SET expires_at = 1 WHERE memory_id = 4",
+            [],
+        )
+        .unwrap();
+    let exp_note = stdout(s.run(&["explain", "--id", "4"], 0));
+    assert!(exp_note.contains("OMITTED FROM CONTEXT"));
+    assert!(exp_note.contains("Expired (stale)"));
+
     // Test Path Context Lens
     s.run(
         &[
@@ -530,76 +954,6 @@ fn test_explain_context_delivery_decisions() {
     assert!(path_lens.contains("Rule #1 [DENY]"));
     assert!(path_lens.contains("Relevant Project Requirements & Intent"));
     assert!(path_lens.contains("Session cookies"));
-}
-
-#[test]
-fn test_handoff_export_preview_apply() {
-    let s1 = Sandbox::new();
-    s1.run(&["init"], 0);
-
-    s1.run(
-        &[
-            "intent",
-            "add",
-            "Use transactional rollbacks for all billing operations",
-            "--key",
-            "billing:tx",
-        ],
-        0,
-    );
-    s1.run(
-        &[
-            "protect",
-            "add",
-            "--path",
-            "billing/**",
-            "--reason",
-            "Financial compliance",
-            "--policy",
-            "deny",
-        ],
-        0,
-    );
-
-    let bundle_file = s1.project.join("billing-handoff.json");
-    let bundle_str = bundle_file.to_str().unwrap();
-
-    // Export handoff bundle
-    let exp_out = stdout(s1.run(
-        &[
-            "handoff",
-            "export",
-            bundle_str,
-            "--include-rules",
-            "--target",
-            "backend-agent",
-        ],
-        0,
-    ));
-    assert!(exp_out.contains("Created agent handoff bundle"));
-    assert!(exp_out.contains("Target recipient:              backend-agent"));
-
-    // In a new, separate agent sandbox (Agent B)
-    let s2 = Sandbox::new();
-    s2.run(&["init"], 0);
-
-    // Preview handoff before applying
-    let prev_out = stdout(s2.run(&["handoff", "preview", bundle_str], 0));
-    assert!(prev_out.contains("Previewing Agent Knowledge Handoff Bundle"));
-    assert!(prev_out.contains("Requirements: 1 approved entries"));
-    assert!(prev_out.contains("Rules:        1 boundary rules"));
-    assert!(prev_out.contains("billing operations"));
-
-    // Apply handoff
-    let apply_out = stdout(s2.run(&["handoff", "apply", bundle_str], 0));
-    assert!(apply_out.contains("Successfully applied agent handoff bundle"));
-    assert!(apply_out.contains("Imported requirements & intent: 1"));
-    assert!(apply_out.contains("Imported boundary rules:       1"));
-
-    // Verify Agent B now has the intent directive and boundary rule
-    let list_b = stdout(s2.run(&["intent", "list"], 0));
-    assert!(list_b.contains("billing operations"));
-    assert!(list_b.contains("key=\"billing:tx\""));
 }
 
 #[test]
@@ -626,7 +980,7 @@ fn test_verify_independent_constraints() {
     assert!(ver_out.contains("[PASS] Boundary Policies"));
     assert!(ver_out.contains("[PASS] Secret Safety Guard"));
     assert!(ver_out.contains("VERIFICATION VERDICT: PASS"));
-    assert!(ver_out.contains("Attestation Manifest: attest:swapctx:v1:pass"));
+    assert!(ver_out.contains("Attestation Manifest: attest:swapctx:v2:sha256:pass"));
 
     // Test JSON verification mode
     let json_ver = stdout(s.run(&["verify", "--json"], 0));
@@ -652,4 +1006,286 @@ fn test_verify_independent_constraints() {
     let fail_out = stdout(s.run(&["verify"], 1));
     assert!(fail_out.contains("[FAIL] Secret Safety Guard"));
     assert!(fail_out.contains("VERIFICATION VERDICT: FAIL"));
+}
+
+fn attestation(s: &Sandbox) -> String {
+    let output = stdout(s.run(&["verify", "--json"], 0));
+    Connection::open_in_memory()
+        .unwrap()
+        .query_row("SELECT json_extract(?1, '$.attestation')", [&output], |r| {
+            r.get(0)
+        })
+        .unwrap()
+}
+
+#[test]
+fn regression_fingerprint_field_boundaries() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    s.run(&["intent", "add", "Retain audit records"], 0);
+    let db = s.db();
+    db.execute(
+        "UPDATE memory_origins SET source='alpha:beta', actor='gamma'",
+        [],
+    )
+    .unwrap();
+    let first = attestation(&s);
+    db.execute(
+        "UPDATE memory_origins SET source='alpha', actor='beta:gamma'",
+        [],
+    )
+    .unwrap();
+    let second = attestation(&s);
+    assert_ne!(first, second);
+    assert_eq!(second, attestation(&s));
+    let digest = second.rsplit(':').next().unwrap();
+    assert_eq!(digest.len(), 64);
+    assert!(digest.chars().all(|c| c.is_ascii_hexdigit()));
+}
+
+#[test]
+fn regression_fingerprint_binds_index_and_raw_worktree() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    let file = s.project.join("file.txt");
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .current_dir(&s.project)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    // Index mutations are confined to this disposable test fixture.
+    git(&["config", "core.autocrlf", "true"]);
+    fs::write(&file, "staged one\n").unwrap();
+    git(&["add", "file.txt"]);
+    fs::write(&file, "working tree\n").unwrap();
+    let first = attestation(&s);
+    fs::write(&file, "staged two\n").unwrap();
+    git(&["add", "file.txt"]);
+    fs::write(&file, "working tree\n").unwrap();
+    let second = attestation(&s);
+    assert_ne!(
+        first, second,
+        "same status and worktree, different staged content"
+    );
+    fs::write(&file, "working tree\r\n").unwrap();
+    assert_ne!(
+        second,
+        attestation(&s),
+        "raw bytes must bind despite Git normalization"
+    );
+}
+
+#[test]
+fn regression_handoff_rules_round_trip_and_exact_conflict() {
+    let source = Sandbox::new();
+    source.run(&["init"], 0);
+    source.run(
+        &["intent", "add", "Use prepared queries", "--key", "database"],
+        0,
+    );
+    source.run(
+        &[
+            "protect",
+            "add",
+            "--path",
+            "migrations/**",
+            "--reason",
+            "Require review",
+            "--policy",
+            "ask",
+        ],
+        0,
+    );
+    let bundle = source.project.join("roundtrip.json");
+    let bundle = bundle.to_str().unwrap();
+    source.run(&["handoff", "export", bundle, "--include-rules"], 0);
+    let target = Sandbox::new();
+    target.run(&["init"], 0);
+    assert!(stdout(target.run(&["handoff", "preview", bundle], 0)).contains("[NEW]"));
+    let result = stdout(target.run(&["handoff", "apply", bundle], 0));
+    assert!(result.contains("Imported boundary rules:       1"));
+    assert!(result.contains("Imported requirements & intent: 1"));
+    let db = target.db();
+    let rule: (String, String, String) = db
+        .query_row(
+            "SELECT pattern, reason, policy FROM rules JOIN rule_policies ON rule_id=rules.id",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        rule,
+        (
+            "migrations/**".into(),
+            "Require review".into(),
+            "ask".into()
+        )
+    );
+    assert!(stdout(target.run(&["handoff", "apply", bundle], 0))
+        .contains("Structurally matched (already present): 1"));
+    target.run(
+        &[
+            "intent",
+            "add",
+            "Use a competing approach",
+            "--key",
+            "database",
+        ],
+        0,
+    );
+    assert!(stdout(target.run(&["handoff", "preview", bundle], 0)).contains("[CONFLICT:"));
+    assert!(stderr(target.run(&["handoff", "apply", bundle], 1))
+        .contains("Handoff rejected due to key conflict"));
+    let counts: (i64, i64) = db
+        .query_row(
+            "SELECT (SELECT count(*) FROM memories), (SELECT count(*) FROM rules)",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(counts, (2, 1));
+}
+
+#[test]
+fn regression_secret_provenance_exports_and_conflict_diagnostics() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    s.run(&["intent", "add", "Retain records"], 0);
+    let secret = "password=regression-credential";
+    for column in ["source", "actor"] {
+        s.db().execute(&format!("UPDATE memory_origins SET source='project-intent', actor='architect', {column}=?1"), [secret]).unwrap();
+        for args in [vec!["intent", "list"], vec!["explain", "--id", "1"]] {
+            let out = stdout(s.run(&args, 0));
+            assert!(!out.contains(secret));
+        }
+        let bundle = s.project.join(format!("{column}.json"));
+        s.run(&["handoff", "export", bundle.to_str().unwrap()], 0);
+        let content = fs::read_to_string(bundle).unwrap();
+        assert!(!content.contains(secret));
+        let count: i64 = s
+            .db()
+            .query_row(
+                "SELECT json_array_length(?1, '$.memories')",
+                [&content],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+    s.run(
+        &[
+            "protect",
+            "add",
+            "--path",
+            "secure/**",
+            "--reason",
+            "Review",
+            "--policy",
+            "ask",
+        ],
+        0,
+    );
+    s.db()
+        .execute("UPDATE rules SET reason=?1", [secret])
+        .unwrap();
+    let bundle = s.project.join("conflict.json");
+    fs::write(&bundle, r#"{"protocol":"swapctx.handoff","version":1,"memories":[],"rules":[{"pattern":"secure/**","reason":"Different","policy":"deny"}]}"#).unwrap();
+    let out = stderr(s.run(&["handoff", "apply", bundle.to_str().unwrap()], 1));
+    assert!(out.contains("rule conflict"));
+    assert!(!out.contains(secret));
+    let db = s.db();
+    db.execute("UPDATE rules SET reason='Review'", []).unwrap();
+    // Exercise defensive export against a malformed legacy database.
+    db.pragma_update(None, "ignore_check_constraints", true)
+        .unwrap();
+    db.execute("UPDATE rule_policies SET policy=?1", [secret])
+        .unwrap();
+    let export = s.project.join("policy.json");
+    s.run(
+        &[
+            "handoff",
+            "export",
+            export.to_str().unwrap(),
+            "--include-rules",
+        ],
+        0,
+    );
+    assert!(!fs::read_to_string(export).unwrap().contains(secret));
+}
+
+#[test]
+fn regression_sensitive_key_conflicts_remain_redacted_with_override() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    let secret = "password=regression-key";
+    s.run(
+        &[
+            "intent",
+            "add",
+            "Existing",
+            "--key",
+            secret,
+            "--allow-sensitive",
+        ],
+        0,
+    );
+    let bundle = s.project.join("key-conflict.json");
+    fs::write(&bundle, format!(r#"{{"protocol":"swapctx.handoff","version":1,"target":"{secret}","memories":[{{"id":1,"kind":"intent","key":"{secret}","content":"Incoming"}}],"rules":[]}}"#)).unwrap();
+    let preview = stdout(s.run(&["handoff", "preview", bundle.to_str().unwrap()], 0));
+    assert!(preview.contains("CONFLICT"));
+    assert!(!preview.contains(secret));
+    let error = stderr(s.run(
+        &[
+            "handoff",
+            "apply",
+            bundle.to_str().unwrap(),
+            "--allow-sensitive",
+        ],
+        1,
+    ));
+    assert!(error.contains("key conflict"));
+    assert!(!error.contains(secret));
+    s.run(
+        &[
+            "intent",
+            "add",
+            "Competing",
+            "--key",
+            secret,
+            "--allow-sensitive",
+        ],
+        0,
+    );
+    for args in [
+        vec!["explain", "--id", "1"],
+        vec!["explain", "--id", "1", "--json"],
+    ] {
+        assert!(!stdout(s.run(&args, 0)).contains(secret));
+    }
+    fs::write(&bundle, format!(r#"{{"protocol":"swapctx.handoff","version":1,"memories":[{{"kind":"intent","key":"{secret}","content":"First"}},{{"kind":"intent","key":"{secret}","content":"Second"}}],"rules":[]}}"#)).unwrap();
+    let fresh = Sandbox::new();
+    fresh.run(&["init"], 0);
+    let error = stderr(fresh.run(
+        &[
+            "handoff",
+            "apply",
+            bundle.to_str().unwrap(),
+            "--allow-sensitive",
+        ],
+        1,
+    ));
+    assert!(error.contains("internal key conflict"));
+    assert!(!error.contains(secret));
+    let count: i64 = fresh
+        .db()
+        .query_row("SELECT count(*) FROM memories", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 0);
 }

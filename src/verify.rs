@@ -2,9 +2,10 @@
 use anyhow::Result;
 use clap::Args;
 use rusqlite::Connection;
+use sha2::{Digest, Sha256};
 use std::{path::Path, process::Command};
 
-use crate::{display::safe, paths, sensitive};
+use crate::{paths, sensitive};
 
 #[derive(Args, Debug)]
 pub struct Options {
@@ -173,7 +174,7 @@ pub fn run(
 
     let git_status = Command::new("git")
         .current_dir(root)
-        .args(["status", "--porcelain=v1", "-uall"])
+        .args(["status", "--porcelain=v1", "-z", "-uall"])
         .output();
 
     let mut unscanned_files_count = 0;
@@ -183,41 +184,35 @@ pub fn run(
 
     match git_status {
         Ok(out) if out.status.success() => {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            for line in stdout.lines() {
-                if line.len() < 4 {
-                    continue;
+            let changes = crate::inspect::parse_git_status_z(&out.stdout);
+            for change in changes {
+                let mut paths_to_check = vec![change.path.as_str()];
+                if let Some(orig) = &change.orig_path {
+                    paths_to_check.push(orig.as_str());
                 }
-                let raw_path = &line[3..];
-                // Handle potential rename target: "R  orig -> new"
-                let target_path = if let Some((_, dest)) = raw_path.split_once(" -> ") {
-                    dest.trim()
-                } else {
-                    raw_path.trim()
-                };
-                let path_clean = target_path.trim_matches('"').replace('\\', "/");
 
-                // Check rules against path
-                for (id, pattern, reason, policy) in &rules {
-                    if let Ok(matcher) = paths::rule_matcher(pattern) {
-                        if matcher.is_match(&path_clean) {
-                            if policy.eq_ignore_ascii_case("deny") {
-                                boundary_passed = false;
-                                boundary_details.push(format!(
-                                    "File '{path_clean}' breaches rule #{id} [DENY: {reason}]"
-                                ));
-                            } else if options.strict && policy.eq_ignore_ascii_case("ask") {
-                                boundary_passed = false;
-                                boundary_details.push(format!(
-                                    "File '{path_clean}' requires human approval under rule #{id} [ASK: {reason}]"
-                                ));
+                for path_clean in paths_to_check {
+                    for (id, pattern, reason, policy) in &rules {
+                        if let Ok(matcher) = paths::rule_matcher(pattern) {
+                            if matcher.is_match(path_clean) {
+                                if policy.eq_ignore_ascii_case("deny") {
+                                    boundary_passed = false;
+                                    boundary_details.push(format!(
+                                        "File '{path_clean}' breaches rule #{id} [DENY: {reason}]"
+                                    ));
+                                } else if options.strict && policy.eq_ignore_ascii_case("ask") {
+                                    boundary_passed = false;
+                                    boundary_details.push(format!(
+                                        "File '{path_clean}' requires human approval under rule #{id} [ASK: {reason}]"
+                                    ));
+                                }
                             }
                         }
                     }
                 }
 
                 // Check file content for secrets if modified and existing
-                let full = root.join(&path_clean);
+                let full = root.join(&change.path);
                 if full.is_file() {
                     match std::fs::metadata(&full) {
                         Ok(meta) if meta.len() > 256 * 1024 => {
@@ -229,7 +224,8 @@ pub fn run(
                                     if sensitive::guard(line, false).is_err() {
                                         secret_passed = false;
                                         secret_detail = format!(
-                                            "Worktree file '{path_clean}' contains sensitive credential markers"
+                                            "Worktree file '{}' contains sensitive credential markers",
+                                            change.path
                                         );
                                         break;
                                     }
@@ -318,7 +314,7 @@ pub fn run(
 
     // Attestation fingerprint computation (Deterministic Canonical State Fingerprint)
     let attestation_hash = if options.attest || options.json {
-        compute_canonical_state_fingerprint(conn, project, root, all_passed)?
+        compute_canonical_state_fingerprint(conn, project, root, all_passed, &checks)?
     } else {
         String::new()
     };
@@ -336,26 +332,39 @@ pub fn run(
     }
 }
 
-/// Computes a reproducible canonical state fingerprint across active memories, rules, git head and verdict.
+/// Computes a reproducible canonical state fingerprint across project schema, all memories,
+/// boundary rules, Git HEAD, uncommitted worktree changes, and verification checks.
 fn compute_canonical_state_fingerprint(
     conn: &Connection,
     project: i64,
     root: &Path,
     passed: bool,
+    checks: &[CheckResult],
 ) -> Result<String> {
     let mut feed = Vec::new();
-    feed.extend_from_slice(b"swapctx-canonical-v1\n");
+    feed.extend_from_slice(b"swapctx-canonical-v3\n");
     feed.extend_from_slice(if passed {
         b"verdict:pass\n"
     } else {
         b"verdict:fail\n"
     });
 
-    // Sorted active memories
+    // Schema version
+    let schema_ver = crate::storage::version(conn)?;
+    feed.extend_from_slice(format!("schema_version:{schema_ver}\n").as_bytes());
+
+    // Project root canonical representation
+    let root_str = crate::paths::path_text(root).unwrap_or("");
+    encode_fields(&mut feed, &["project_root", root_str]);
+
+    // Sorted memories (including lifecycle, expiry, invalidation, and provenance)
     let mut m_stmt = conn.prepare(
-        "SELECT m.id, m.kind, m.content, coalesce(d.memory_key, ''), coalesce(d.state, 'active'), coalesce(d.validity, 'valid')
+        "SELECT m.id, m.kind, m.content, coalesce(d.memory_key, ''), coalesce(d.state, 'active'),
+                coalesce(d.validity, 'valid'), d.expires_at, d.reviewed_at, coalesce(d.invalid_reason, ''),
+                coalesce(o.source, ''), coalesce(o.actor, '')
          FROM memories m
          LEFT JOIN memory_metadata d ON d.memory_id = m.id
+         LEFT JOIN memory_origins o ON o.memory_id = m.id
          WHERE m.project_id = ?1
          ORDER BY m.id ASC",
     )?;
@@ -368,8 +377,28 @@ fn compute_canonical_state_fingerprint(
         let key: String = r.get(3)?;
         let state: String = r.get(4)?;
         let validity: String = r.get(5)?;
-        let row_repr = format!("mem:{id}:{kind}:{key}:{state}:{validity}:{content}\n");
-        feed.extend_from_slice(row_repr.as_bytes());
+        let expires_at: Option<i64> = r.get(6)?;
+        let reviewed_at: Option<i64> = r.get(7)?;
+        let invalid_reason: String = r.get(8)?;
+        let source: String = r.get(9)?;
+        let actor: String = r.get(10)?;
+        encode_fields(
+            &mut feed,
+            &[
+                "mem",
+                &id.to_string(),
+                &kind,
+                &key,
+                &state,
+                &validity,
+                &format!("{expires_at:?}"),
+                &format!("{reviewed_at:?}"),
+                &invalid_reason,
+                &source,
+                &actor,
+                &content,
+            ],
+        );
         mem_count += 1;
     }
 
@@ -388,8 +417,10 @@ fn compute_canonical_state_fingerprint(
         let pattern: String = r.get(1)?;
         let reason: String = r.get(2)?;
         let policy: String = r.get(3)?;
-        let row_repr = format!("rule:{id}:{pattern}:{policy}:{reason}\n");
-        feed.extend_from_slice(row_repr.as_bytes());
+        encode_fields(
+            &mut feed,
+            &["rule", &id.to_string(), &pattern, &policy, &reason],
+        );
         rule_count += 1;
     }
 
@@ -401,34 +432,104 @@ fn compute_canonical_state_fingerprint(
     if let Ok(out) = git_head {
         if out.status.success() {
             let commit = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            feed.extend_from_slice(format!("git_head:{commit}\n").as_bytes());
+            encode_fields(&mut feed, &["git_head", &commit]);
         }
     }
 
-    let (h1, h2) = fnv1a128(&feed);
+    // Git's binary diffs bind index and working tree separately, including modes,
+    // deletions, renames, and staged blobs hidden by later working-tree edits.
+    for args in [
+        vec![
+            "diff",
+            "--cached",
+            "--binary",
+            "--full-index",
+            "--no-ext-diff",
+            "--no-textconv",
+        ],
+        vec![
+            "diff",
+            "--binary",
+            "--full-index",
+            "--no-ext-diff",
+            "--no-textconv",
+        ],
+        vec!["status", "--porcelain=v1", "-z", "-uall"],
+        vec!["ls-files", "--stage", "-z"],
+    ] {
+        let out = Command::new("git").current_dir(root).args(&args).output()?;
+        encode_fields(
+            &mut feed,
+            &["git", &args.join(" "), &out.status.to_string()],
+        );
+        encode_bytes(&mut feed, &out.stdout);
+    }
+    let out = Command::new("git")
+        .current_dir(root)
+        .args([
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--deduplicate",
+            "-z",
+        ])
+        .output()?;
+    for path in out.stdout.split(|b| *b == 0).filter(|p| !p.is_empty()) {
+        let path_text = std::str::from_utf8(path)?;
+        encode_fields(&mut feed, &["worktree", path_text]);
+        let full = root.join(path_text);
+        match std::fs::symlink_metadata(&full) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                encode_fields(
+                    &mut feed,
+                    &[
+                        "symlink",
+                        crate::paths::path_text(&std::fs::read_link(&full)?)?,
+                    ],
+                );
+            }
+            Ok(meta) if meta.is_file() => {
+                encode_fields(&mut feed, &["file"]);
+                encode_bytes(&mut feed, &std::fs::read(&full)?);
+            }
+            Ok(_) => encode_fields(&mut feed, &["directory"]),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                encode_fields(&mut feed, &["absent"])
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+    // Include verification check verdicts
+    for c in checks {
+        encode_fields(
+            &mut feed,
+            &["check", c.name, &c.passed.to_string(), &c.detail],
+        );
+    }
+
+    let digest = Sha256::digest(&feed);
     let hash_manifest = format!(
-        "attest:swapctx:v1:{}:{}:{}:{:016x}{:016x}",
+        "attest:swapctx:v2:sha256:{}:{}:{}:{:x}",
         if passed { "pass" } else { "fail" },
         mem_count,
         rule_count,
-        h1,
-        h2
+        digest
     );
     Ok(hash_manifest)
 }
 
-fn fnv1a128(bytes: &[u8]) -> (u64, u64) {
-    let mut h1 = 0xcbf29ce484222325u64;
-    let mut h2 = 0x84222325cbf29ce4u64;
-    for &b in bytes {
-        h1 ^= b as u64;
-        h1 = h1.wrapping_mul(0x100000001b3);
-        h2 ^= (b as u64).rotate_left(3);
-        h2 = h2.wrapping_mul(0x100000001b3);
-    }
-    (h1, h2)
+fn encode_bytes(feed: &mut Vec<u8>, bytes: &[u8]) {
+    feed.extend_from_slice(&(bytes.len() as u64).to_be_bytes());
+    feed.extend_from_slice(bytes);
 }
 
+fn encode_fields(feed: &mut Vec<u8>, fields: &[&str]) {
+    feed.extend_from_slice(&(fields.len() as u64).to_be_bytes());
+    for field in fields {
+        encode_bytes(feed, field.as_bytes());
+    }
+}
 fn render_text(
     checks: &[CheckResult],
     all_passed: bool,
@@ -439,7 +540,11 @@ fn render_text(
 
     for check in checks {
         let mark = if check.passed { "[PASS]" } else { "[FAIL]" };
-        println!("{mark} {}: {}", check.name, safe(&check.detail));
+        println!(
+            "{mark} {}: {}",
+            check.name,
+            sensitive::display(&check.detail, false)
+        );
     }
 
     println!();
@@ -469,7 +574,7 @@ fn render_json(
                 "{{\"name\":\"{}\",\"passed\":{},\"detail\":\"{}\"}}",
                 json_escape(c.name),
                 c.passed,
-                json_escape(&c.detail)
+                json_escape(&sensitive::display(&c.detail, false))
             )
         })
         .collect::<Vec<_>>()

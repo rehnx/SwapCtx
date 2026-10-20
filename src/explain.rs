@@ -215,10 +215,18 @@ fn explain_record(
     } else if is_sensitive {
         (false, "Sensitive pattern detected".into(), "Secret markers found in content. Invalidate or supersede the record without sensitive credentials.")
     } else {
-        // Test packet inclusion
+        // Test packet inclusion via structural lookup inside the records array
         let in_packet = if let Ok(json) = crate::context::packet(conn, cwd, &request) {
-            let id_pattern = format!("\"id\":\"{}\"", id);
-            json.contains(&id_pattern)
+            conn.query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM json_each(?1, '$.records')
+                     WHERE json_extract(value, '$.id') = CAST(?2 AS TEXT)
+                        OR json_extract(value, '$.id') = ?2
+                 )",
+                params![&json, id],
+                |r| r.get(0),
+            )
+            .unwrap_or(false)
         } else {
             false
         };
@@ -255,9 +263,9 @@ fn explain_record(
             )",
             params![
                 id,
-                kind,
+                sensitive::display(&kind, false),
                 if delivered { "true" } else { "false" },
-                omission_reason,
+                sensitive::display(&omission_reason, false),
                 suggested_fix,
                 state,
                 validity,
@@ -304,7 +312,10 @@ fn explain_record(
         println!("  - Record is active, valid, and meets all fresh/unconflicted criteria.");
         println!("  - Included in native context packet within the {max_bytes}-byte budget.");
     } else {
-        println!("  - Reason omitted: {}", safe(&omission_reason));
+        println!(
+            "  - Reason omitted: {}",
+            sensitive::display(&omission_reason, false)
+        );
         println!("  - Suggested fix:  {}", safe(suggested_fix));
     }
 

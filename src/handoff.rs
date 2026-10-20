@@ -1,7 +1,7 @@
 //! Safe, developer-approved transfer of verified context and project intent between agents.
 use anyhow::{bail, Context, Result};
 use clap::Subcommand;
-use rusqlite::{params, Connection, TransactionBehavior};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use std::{
     fs,
     io::Write,
@@ -67,7 +67,7 @@ pub fn run(conn: &mut Connection, project: i64, root: &Path, action: Action) -> 
             include_rules,
             target,
         } => export(conn, project, root, &destination, include_rules, &target)?,
-        Action::Preview { source } => preview(&source)?,
+        Action::Preview { source } => preview(conn, project, &source)?,
         Action::Apply {
             source,
             allow_sensitive,
@@ -102,6 +102,18 @@ fn export(
     } else {
         ""
     };
+    let unconflicted_clause = if modern {
+        "AND (d.memory_key IS NULL OR d.memory_key NOT IN (
+            SELECT c.memory_key FROM memory_metadata c
+            JOIN memories cm ON cm.id = c.memory_id
+            WHERE cm.project_id = ?1 AND c.memory_key IS NOT NULL
+              AND coalesce(c.state, 'active') = 'active'
+              AND coalesce(c.validity, 'valid') = 'valid'
+            GROUP BY c.memory_key HAVING count(*) > 1
+        ))"
+    } else {
+        ""
+    };
 
     let sql = format!(
         "SELECT m.id, m.kind, m.content, d.memory_key, o.source, o.actor
@@ -112,6 +124,7 @@ fn export(
            AND m.kind IN ('requirement', 'intent')
            {active_clause}
            {validity_clause}
+           {unconflicted_clause}
          ORDER BY m.id ASC"
     );
 
@@ -128,9 +141,15 @@ fn export(
         let actor: Option<String> = r.get(5)?;
 
         // Never export credentials or secrets
-        if [&kind, &content, key.as_deref().unwrap_or("")]
-            .iter()
-            .any(|s| sensitive::guard(s, false).is_err())
+        if [
+            &kind,
+            &content,
+            key.as_deref().unwrap_or(""),
+            source.as_deref().unwrap_or(""),
+            actor.as_deref().unwrap_or(""),
+        ]
+        .iter()
+        .any(|s| sensitive::guard(s, false).is_err())
         {
             continue;
         }
@@ -161,7 +180,7 @@ fn export(
             let reason: String = r.get(1)?;
             let policy: String = r.get(2)?;
 
-            if [&pattern, &reason]
+            if [&pattern, &reason, &policy]
                 .iter()
                 .any(|s| sensitive::guard(s, false).is_err())
             {
@@ -224,13 +243,16 @@ fn export(
     );
     println!("  - Approved requirements & intent: {}", memories.len());
     println!("  - Boundary rules included:       {}", rules.len());
-    println!("  - Target recipient:              {}", safe(target));
+    println!(
+        "  - Target recipient:              {}",
+        sensitive::display(target, false)
+    );
     println!("  - Credentials / secrets scrubbed: verified");
 
     Ok(())
 }
 
-fn preview(source: &Path) -> Result<()> {
+fn preview(conn: &Connection, project: i64, source: &Path) -> Result<()> {
     if !source.is_file() {
         bail!("Handoff bundle file not found: {}", source.display());
     }
@@ -253,12 +275,12 @@ fn preview(source: &Path) -> Result<()> {
             .context("Invalid handoff bundle JSON format")?;
 
     if protocol != "swapctx.handoff" || version != 1 {
-        bail!("Unsupported handoff bundle protocol '{protocol}' v{version}");
+        bail!("Unsupported handoff bundle protocol or version");
     }
 
     println!("Previewing Agent Knowledge Handoff Bundle\n");
     println!("Source:       {}", safe(&source.display().to_string()));
-    println!("Target agent: {}", safe(&target));
+    println!("Target agent: {}", sensitive::display(&target, false));
     println!("Requirements: {items_count} approved entries");
     println!("Rules:        {rules_count} boundary rules\n");
 
@@ -269,30 +291,140 @@ fn preview(source: &Path) -> Result<()> {
     )?;
     let mut rows = stmt.query([&content])?;
     let mut shown = 0;
+    let mut exact_matches = 0;
+    let mut key_conflicts = 0;
+    let mut new_entries = 0;
+
     while let Some(r) = rows.next()? {
         let orig_id: i64 = r.get(0)?;
         let kind: String = r.get(1)?;
         let text: String = r.get(2)?;
         let key: Option<String> = r.get(3)?;
+        let clean_key = key.as_deref().filter(|k| !k.is_empty());
 
-        let key_str = key
-            .filter(|k| !k.is_empty())
-            .map(|k| format!(" key=\"{}\"", sensitive::display(&k, false)))
+        // Structural context-record matching against current project
+        let exact_match: Option<i64> = conn
+            .query_row(
+                "SELECT m.id FROM memories m
+                 LEFT JOIN memory_metadata d ON d.memory_id = m.id
+                 WHERE m.project_id = ?1 AND m.kind = ?2 AND m.content = ?3
+                   AND coalesce(d.memory_key, '') = ?4
+                   AND coalesce(d.state, 'active') = 'active'
+                   AND coalesce(d.validity, 'valid') = 'valid'",
+                params![project, kind, text, clean_key.unwrap_or("")],
+                |r| r.get(0),
+            )
+            .optional()?;
+
+        // Conflict check: existing active record with same key but different content
+        let conflict_existing: Option<i64> = if let Some(k) = clean_key {
+            conn.query_row(
+                "SELECT m.id FROM memories m
+                 JOIN memory_metadata d ON d.memory_id = m.id
+                 WHERE m.project_id = ?1 AND d.memory_key = ?2
+                   AND coalesce(d.state, 'active') = 'active'
+                   AND coalesce(d.validity, 'valid') = 'valid'
+                   AND m.content != ?3",
+                params![project, k, text],
+                |r| r.get(0),
+            )
+            .optional()?
+        } else {
+            None
+        };
+
+        let status_badge = if let Some(cid) = conflict_existing {
+            key_conflicts += 1;
+            format!(
+                " [CONFLICT: key \"{}\" competes with existing #{cid}]",
+                sensitive::display(clean_key.unwrap_or(""), false)
+            )
+        } else if let Some(id) = exact_match {
+            exact_matches += 1;
+            format!(" [EXISTS: exact match #{id}]")
+        } else {
+            new_entries += 1;
+            " [NEW]".to_string()
+        };
+
+        let key_str = clean_key
+            .map(|k| format!(" key=\"{}\"", sensitive::display(k, false)))
             .unwrap_or_default();
-        println!(
-            "  - [origin #{orig_id}] [{}]{}",
-            sensitive::display(&kind, false),
-            key_str
-        );
-        println!("      {}", sensitive::display(&text, false));
-        shown += 1;
-        if shown >= 5 {
-            if items_count > 5 {
-                println!("      ... and {} more entries", items_count - 5);
-            }
-            break;
+
+        if shown < 5 {
+            println!(
+                "  - [origin #{orig_id}] [{}]{}{}",
+                sensitive::display(&kind, false),
+                key_str,
+                status_badge
+            );
+            println!("      {}", sensitive::display(&text, false));
+            shown += 1;
         }
     }
+
+    if items_count > 5 {
+        println!("      ... and {} more entries", items_count - 5);
+    }
+
+    // Preview boundary rules if present
+    let mut r_stmt = parser.prepare(
+        "SELECT json_extract(value, '$.pattern'), json_extract(value, '$.reason'),
+                json_extract(value, '$.policy')
+         FROM json_each(?1, '$.rules')",
+    )?;
+    let mut r_rows = r_stmt.query([&content])?;
+    let mut shown_rules = 0;
+    let mut rule_conflicts = 0;
+    while let Some(r) = r_rows.next()? {
+        let pattern: String = r.get(0)?;
+        let reason: String = r.get(1)?;
+        let policy: String = r.get(2)?;
+        let norm_policy = policy.trim().to_ascii_lowercase();
+
+        let existing_rule: Option<(i64, String, String)> = conn
+            .query_row(
+                "SELECT r.id, r.reason, coalesce(p.policy, 'deny')
+                 FROM rules r
+                 LEFT JOIN rule_policies p ON p.rule_id = r.id
+                 WHERE r.project_id = ?1 AND r.pattern = ?2",
+                params![project, pattern],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+
+        let status_str = if let Some((_r_id, ex_reason, ex_pol)) = existing_rule {
+            let ex_pol_norm = ex_pol.trim().to_ascii_lowercase();
+            if ex_pol_norm == norm_policy && ex_reason == reason {
+                " [EXISTS: exact match]"
+            } else {
+                rule_conflicts += 1;
+                " [CONFLICT: pattern collides with differing policy/reason]"
+            }
+        } else {
+            " [NEW]"
+        };
+
+        if shown_rules < 5 {
+            println!(
+                "  - [rule] pattern=\"{}\" policy={} reason=\"{}\"{}",
+                sensitive::display(&pattern, false),
+                sensitive::display(&norm_policy, false),
+                sensitive::display(&reason, false),
+                status_str
+            );
+            shown_rules += 1;
+        }
+    }
+    if rules_count > 5 {
+        println!("      ... and {} more rules", rules_count - 5);
+    }
+
+    println!("\nStructural Matching & Conflict Analysis:");
+    println!("  - Structurally identical records (already present): {exact_matches}");
+    println!("  - Competing key conflicts detected:                 {key_conflicts}");
+    println!("  - Conflicting rule patterns detected:               {rule_conflicts}");
+    println!("  - New records ready to import:                      {new_entries}");
 
     println!(
         "\nTo apply this handoff to current project: swapctx handoff apply {}",
@@ -321,7 +453,7 @@ fn apply(conn: &mut Connection, project: i64, source: &Path, allow_sensitive: bo
         .context("Invalid handoff bundle JSON")?;
 
     if protocol != "swapctx.handoff" || version != 1 {
-        bail!("Unsupported handoff bundle protocol '{protocol}' v{version}");
+        bail!("Unsupported handoff bundle protocol or version");
     }
 
     validate_text("Target label", &target, 128)?;
@@ -333,7 +465,9 @@ fn apply(conn: &mut Connection, project: i64, source: &Path, allow_sensitive: bo
     let provenance = crate::storage::version(&tx)? >= 3;
 
     let mut imported_memories = 0;
+    let mut already_present = 0;
     let mut imported_rules = 0;
+    let mut seen_bundle_keys = std::collections::HashMap::new();
 
     let mut stmt = parser.prepare(
         "SELECT json_extract(value, '$.kind'), json_extract(value, '$.content'),
@@ -354,7 +488,7 @@ fn apply(conn: &mut Connection, project: i64, source: &Path, allow_sensitive: bo
         validate_text("Memory kind", &kind, 64)?;
         match kind.as_str() {
             "requirement" | "decision" | "note" | "intent" => (),
-            other => bail!("Invalid memory kind '{other}' in bundle"),
+            _ => bail!("Invalid memory kind in bundle"),
         }
 
         validate_text("Memory content", &text, 1024 * 1024)?;
@@ -375,16 +509,62 @@ fn apply(conn: &mut Connection, project: i64, source: &Path, allow_sensitive: bo
             sensitive::guard(a, allow_sensitive)?;
         }
 
-        // Avoid exact duplicate content in project
-        let exists: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM memories WHERE project_id = ?1 AND content = ?2)",
-            params![project, text],
-            |row| row.get(0),
-        )?;
-        if exists {
-            continue;
+        let clean_key = key.as_deref().filter(|k| !k.is_empty());
+
+        // Check for duplicate competing keys inside the bundle itself
+        if let Some(k) = clean_key {
+            if let Some(prev_text) = seen_bundle_keys.get(k) {
+                if prev_text != &text {
+                    bail!(
+                        "Bundle contains internal key conflict: multiple entries share a key with differing content"
+                    );
+                }
+            } else {
+                seen_bundle_keys.insert(k.to_string(), text.clone());
+            }
         }
 
+        // Structural context-record matching: check if exact record already exists
+        let exact_exists: bool = tx.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM memories m
+                 LEFT JOIN memory_metadata d ON d.memory_id = m.id
+                 WHERE m.project_id = ?1 AND m.kind = ?2 AND m.content = ?3
+                   AND coalesce(d.memory_key, '') = ?4
+                   AND coalesce(d.state, 'active') = 'active'
+                   AND coalesce(d.validity, 'valid') = 'valid'
+             )",
+            params![project, kind, text, clean_key.unwrap_or("")],
+            |row| row.get(0),
+        )?;
+
+        // Handoff conflict detection: reject atomically if incoming key competes with an existing active record
+        if let Some(k) = clean_key {
+            let conflict_id: Option<i64> = tx
+                .query_row(
+                    "SELECT m.id FROM memories m
+                     JOIN memory_metadata d ON d.memory_id = m.id
+                     WHERE m.project_id = ?1 AND d.memory_key = ?2
+                       AND coalesce(d.state, 'active') = 'active'
+                       AND coalesce(d.validity, 'valid') = 'valid'
+                       AND m.content != ?3
+                     LIMIT 1",
+                    params![project, k, text],
+                    |cr| cr.get(0),
+                )
+                .optional()?;
+
+            if let Some(conf_id) = conflict_id {
+                bail!(
+                    "Handoff rejected due to key conflict: incoming key competes with active record #{conf_id} in current project"
+                );
+            }
+        }
+
+        if exact_exists {
+            already_present += 1;
+            continue;
+        }
         tx.execute(
             "INSERT INTO memories(project_id, kind, content) VALUES (?1, ?2, ?3)",
             params![project, kind, text],
@@ -395,7 +575,7 @@ fn apply(conn: &mut Connection, project: i64, source: &Path, allow_sensitive: bo
             tx.execute(
                 "INSERT INTO memory_metadata(memory_id, memory_key, state, validity, reviewed_at)
                  VALUES (?1, ?2, 'active', 'valid', ?3)",
-                params![new_id, key.filter(|k| !k.is_empty()), now],
+                params![new_id, clean_key, now],
             )?;
         }
 
@@ -424,6 +604,8 @@ fn apply(conn: &mut Connection, project: i64, source: &Path, allow_sensitive: bo
          FROM json_each(?1, '$.rules')",
     )?;
     let mut r_rows = r_stmt.query([&content])?;
+    let mut seen_bundle_rule_patterns = std::collections::HashMap::new();
+
     while let Some(r) = r_rows.next()? {
         let pattern: String = r.get(0)?;
         let reason: String = r.get(1)?;
@@ -438,16 +620,42 @@ fn apply(conn: &mut Connection, project: i64, source: &Path, allow_sensitive: bo
 
         let norm_policy = policy.trim().to_ascii_lowercase();
         if !matches!(norm_policy.as_str(), "deny" | "ask" | "audit") {
-            bail!("Invalid rule policy '{policy}' in handoff bundle; must be deny, ask, or audit");
+            bail!("Invalid rule policy in handoff bundle; must be deny, ask, or audit");
         }
 
-        let exists: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM rules WHERE project_id = ?1 AND pattern = ?2)",
-            params![project, pattern],
-            |row| row.get(0),
-        )?;
-        if exists {
-            continue;
+        // Check for duplicate rule pattern conflicts inside the bundle
+        if let Some((prev_pol, prev_reason)) = seen_bundle_rule_patterns.get(&pattern) {
+            if prev_pol != &norm_policy || prev_reason != &reason {
+                bail!("Bundle contains conflicting rule definitions for a pattern");
+            }
+        } else {
+            seen_bundle_rule_patterns
+                .insert(pattern.clone(), (norm_policy.clone(), reason.clone()));
+        }
+
+        // Check if an existing rule with this pattern already exists in project
+        let existing_rule: Option<(i64, String, String)> = tx
+            .query_row(
+                "SELECT r.id, r.reason, coalesce(p.policy, 'deny')
+                 FROM rules r
+                 LEFT JOIN rule_policies p ON p.rule_id = r.id
+                 WHERE r.project_id = ?1 AND r.pattern = ?2",
+                params![project, pattern],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+
+        if let Some((rule_id, ex_reason, ex_policy)) = existing_rule {
+            let ex_policy_norm = ex_policy.trim().to_ascii_lowercase();
+            if ex_policy_norm == norm_policy && ex_reason == reason {
+                // Exact structural rule match already exists, skip
+                continue;
+            } else {
+                // Rule collision with differing policy or reason
+                bail!(
+                    "Handoff rejected due to rule conflict: incoming rule conflicts with existing rule #{rule_id}"
+                );
+            }
         }
 
         tx.execute(
@@ -468,6 +676,7 @@ fn apply(conn: &mut Connection, project: i64, source: &Path, allow_sensitive: bo
     tx.commit()?;
     println!("Successfully applied agent handoff bundle:");
     println!("  - Imported requirements & intent: {imported_memories}");
+    println!("  - Structurally matched (already present): {already_present}");
     println!("  - Imported boundary rules:       {imported_rules}");
     println!("  - Transaction committed locally");
 

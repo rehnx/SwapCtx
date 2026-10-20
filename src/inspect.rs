@@ -27,10 +27,18 @@ pub enum SensitiveScanResult {
     UnreadableSkipped,
 }
 
+#[derive(Debug, Clone)]
+pub struct GitChange {
+    pub path: String,
+    pub status: String,
+    pub orig_path: Option<String>,
+}
+
 #[derive(Debug)]
 pub struct FileChange {
     pub path: String,
     pub status: String,
+    pub orig_path: Option<String>,
     pub matched_rules: Vec<RuleHit>,
     pub sensitive_scan: SensitiveScanResult,
 }
@@ -64,6 +72,53 @@ pub fn json_escape(s: &str) -> String {
     out
 }
 
+/// Robust NUL-delimited parser for `git status --porcelain=v1 -z -uall`.
+/// Avoids line-splitting and handles quotes, spaces, newlines, and renames cleanly.
+pub fn parse_git_status_z(bytes: &[u8]) -> Vec<GitChange> {
+    let mut changes = Vec::new();
+    let mut i = 0;
+    while i + 3 <= bytes.len() {
+        let status = match std::str::from_utf8(&bytes[i..i + 2]) {
+            Ok(s) => s.trim().to_string(),
+            Err(_) => break,
+        };
+        let is_rename_or_copy =
+            bytes[i] == b'R' || bytes[i + 1] == b'R' || bytes[i] == b'C' || bytes[i + 1] == b'C';
+        i += 3; // skip status code (2 bytes) and space (1 byte)
+
+        // Find NUL terminator for path
+        let end = match bytes[i..].iter().position(|&b| b == 0) {
+            Some(pos) => i + pos,
+            None => bytes.len(),
+        };
+        let path = String::from_utf8_lossy(&bytes[i..end]).replace('\\', "/");
+        i = if end < bytes.len() { end + 1 } else { end };
+
+        let orig_path = if is_rename_or_copy && i < bytes.len() {
+            let orig_end = match bytes[i..].iter().position(|&b| b == 0) {
+                Some(pos) => i + pos,
+                None => bytes.len(),
+            };
+            let orig = String::from_utf8_lossy(&bytes[i..orig_end]).replace('\\', "/");
+            i = if orig_end < bytes.len() {
+                orig_end + 1
+            } else {
+                orig_end
+            };
+            Some(orig)
+        } else {
+            None
+        };
+
+        changes.push(GitChange {
+            path,
+            status,
+            orig_path,
+        });
+    }
+    changes
+}
+
 pub fn run(conn: &Connection, project: i64, root: &Path, options: Options) -> Result<u8> {
     // Collect boundary rules from database
     let mut stmt = conn.prepare(
@@ -90,28 +145,40 @@ pub fn run(conn: &Connection, project: i64, root: &Path, options: Options) -> Re
     let mut has_deny_violation = false;
     let mut has_sensitive_leak = false;
 
-    for (file_rel, status) in changes {
+    for change in changes {
         let mut matched = Vec::new();
-        for rule in &rules {
-            if let Ok(matcher) = paths::rule_matcher(&rule.pattern) {
-                if matcher.is_match(&file_rel) {
-                    if rule.policy.eq_ignore_ascii_case("deny") {
-                        has_deny_violation = true;
+
+        // Check both current path and original path (for renames) against boundary rules
+        let mut paths_to_check = vec![change.path.as_str()];
+        if let Some(orig) = &change.orig_path {
+            paths_to_check.push(orig.as_str());
+        }
+
+        for path_str in paths_to_check {
+            for rule in &rules {
+                if let Ok(matcher) = paths::rule_matcher(&rule.pattern) {
+                    if matcher.is_match(path_str) {
+                        if rule.policy.eq_ignore_ascii_case("deny") {
+                            has_deny_violation = true;
+                        }
+                        if !matched.iter().any(|r: &RuleHit| r.rule_id == rule.rule_id) {
+                            matched.push(rule.clone());
+                        }
                     }
-                    matched.push(rule.clone());
                 }
             }
         }
 
         // Check file content for sensitive tokens with honest coverage
-        let sensitive_scan = check_file_sensitive(root, &file_rel, &status);
+        let sensitive_scan = check_file_sensitive(root, &change.path, &change.status);
         if sensitive_scan == SensitiveScanResult::Detected {
             has_sensitive_leak = true;
         }
 
         audited_changes.push(FileChange {
-            path: file_rel,
-            status,
+            path: change.path,
+            status: change.status,
+            orig_path: change.orig_path,
             matched_rules: matched,
             sensitive_scan,
         });
@@ -142,10 +209,10 @@ pub fn run(conn: &Connection, project: i64, root: &Path, options: Options) -> Re
     }
 }
 
-fn collect_changes(root: &Path, specific_path: Option<&str>) -> Result<Vec<(String, String)>> {
+fn collect_changes(root: &Path, specific_path: Option<&str>) -> Result<Vec<GitChange>> {
     let mut cmd = Command::new("git");
     cmd.current_dir(root)
-        .args(["status", "--porcelain=v1", "-uall"]);
+        .args(["status", "--porcelain=v1", "-z", "-uall"]);
     if let Some(target) = specific_path {
         cmd.arg("--").arg(target);
     }
@@ -162,37 +229,28 @@ fn collect_changes(root: &Path, specific_path: Option<&str>) -> Result<Vec<(Stri
         );
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut results = Vec::new();
-
-    for line in stdout.lines() {
-        if line.len() < 4 {
-            continue;
-        }
-        let status = line[..2].trim().to_string();
-        let raw_path = &line[3..];
-
-        // Safe parsing of Git renames and quoted paths
-        let target_path = if let Some((_, dest)) = raw_path.split_once(" -> ") {
-            dest.trim()
+    let parsed = parse_git_status_z(&output.stdout);
+    if let Some(target) = specific_path {
+        let norm_target = target.replace('\\', "/");
+        let target_prefix = if norm_target.ends_with('/') {
+            norm_target.clone()
         } else {
-            raw_path.trim()
+            format!("{norm_target}/")
         };
-
-        // Unquote Git-quoted filenames if wrapped in quotes
-        let unquoted =
-            if target_path.starts_with('"') && target_path.ends_with('"') && target_path.len() >= 2
-            {
-                &target_path[1..target_path.len() - 1]
-            } else {
-                target_path
-            };
-
-        let normalized = unquoted.replace('\\', "/");
-        results.push((normalized, status));
+        Ok(parsed
+            .into_iter()
+            .filter(|c| {
+                c.path == norm_target
+                    || c.path.starts_with(&target_prefix)
+                    || c.orig_path.as_deref() == Some(&norm_target)
+                    || c.orig_path
+                        .as_deref()
+                        .is_some_and(|o| o.starts_with(&target_prefix))
+            })
+            .collect())
+    } else {
+        Ok(parsed)
     }
-
-    Ok(results)
 }
 
 fn check_file_sensitive(root: &Path, rel_path: &str, status: &str) -> SensitiveScanResult {
@@ -251,6 +309,7 @@ fn render_text(
     let mut warnings = 0;
     let mut oversized = 0;
     let mut unreadable = 0;
+    let mut secrets_redacted_in_diff = 0;
 
     println!("Detected Worktree Changes ({} files):", changes.len());
     for change in changes {
@@ -288,10 +347,17 @@ fn render_text(
             SensitiveScanResult::Clean => "",
         };
 
+        let rename_detail = if let Some(orig) = &change.orig_path {
+            format!(" (renamed from {})", safe(orig))
+        } else {
+            String::new()
+        };
+
         println!(
-            "  - {} ({}){}{}",
+            "  - {} ({}){}{}{}",
             safe(&change.path),
             status_desc,
+            rename_detail,
             badge,
             sensitive_note
         );
@@ -307,7 +373,7 @@ fn render_text(
         }
 
         if show_diff && !change.matched_rules.is_empty() {
-            // Safe diff preview for touched protected files
+            // Secret-safe diff preview for touched protected files
             let diff_output = Command::new("git")
                 .current_dir(root)
                 .args(["diff", "--", &change.path])
@@ -315,13 +381,23 @@ fn render_text(
             if let Ok(out) = diff_output {
                 let diff_text = String::from_utf8_lossy(&out.stdout);
                 for line in diff_text.lines().take(15) {
-                    println!("        {}", safe(line));
+                    if sensitive::detected(line) {
+                        secrets_redacted_in_diff += 1;
+                        println!("        {}", sensitive::display(line, false));
+                    } else {
+                        println!("        {}", safe(line));
+                    }
                 }
             }
         }
     }
 
     println!();
+    if secrets_redacted_in_diff > 0 {
+        println!(
+            "Notice: Secret-safe preview active — {secrets_redacted_in_diff} line(s) with potential secrets were redacted."
+        );
+    }
     if oversized > 0 || unreadable > 0 {
         println!(
             "Note: Honest coverage reporting — {} oversized and {} unreadable/binary file(s) were not scanned.",
@@ -378,9 +454,13 @@ fn render_json(
         };
 
         files_json.push(format!(
-            "{{\"path\":\"{}\",\"status\":\"{}\",\"sensitive\":{},\"sensitive_status\":\"{}\",\"rules\":[{}]}}",
+            "{{\"path\":\"{}\",\"status\":\"{}\",\"orig_path\":{},\"sensitive\":{},\"sensitive_status\":\"{}\",\"rules\":[{}]}}",
             json_escape(&c.path),
             json_escape(&c.status),
+            c.orig_path
+                .as_ref()
+                .map(|p| format!("\"{}\"", json_escape(p)))
+                .unwrap_or_else(|| "null".into()),
             c.sensitive_scan == SensitiveScanResult::Detected,
             scan_status,
             rules_arr
