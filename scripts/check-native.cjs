@@ -154,7 +154,7 @@ test('full CLI handles both providers missing hooks, invalid events, wrong proje
     if(mode==='nested') {const nested=path.join(f.project,'child');fs.mkdirSync(nested);assert.equal(f.cli(['init'],nested).status,0);overrides.SWAPCTX_FAKE_EVENT_CWD=nested;}
     if(mode==='error') overrides.SWAPCTX_FAKE_EXIT='29';
     const n=npmFixture(f,provider,overrides),r=n.run(['--context']);
-    assert.equal(r.status,mode==='error'?29:mode==='interrupt'?1:0,r.stderr);
+    assert.equal(r.status,mode==='error'?29:mode==='interrupt'?1:0,`${provider}/${mode}: ${r.error?.code||''}\n${r.stderr}`);
     const report=n.read();
     if(['no-hooks','interrupt'].includes(mode)) assert.match(r.stderr,/no hook callback was recorded/);
     else if(mode==='error') assert.match(r.stderr,/5 contexts prepared/);
@@ -170,6 +170,28 @@ test('unsupported provider probes preserve shell-free npm arguments and do not c
     const r=n.run(['--context','--','--resume','a & b % literal'],missing);
     assert.equal(r.status,27,r.stderr);assert.match(r.stderr,/without SwapCtx context/);assert.equal(fs.existsSync(missing),false);
     assert.deepEqual(n.read().arguments,['--resume','a & b % literal']);
+  }
+});
+
+test('full CLI distinguishes Node/config entry and receipt failure even when no callback receipt survives',()=>{
+  if(process.platform!=='win32') return;
+  for(const provider of ['codex','claude']) for(const mode of ['config-invalid','receipt-lock']) {
+    const f=fixture(),n=npmFixture(f,provider,{SWAPCTX_FAKE_MODE:mode});
+    const r=n.run(['--context']);assert.equal(r.status,0,`${provider}/${mode}: ${r.stderr}`);
+    assert.match(r.stderr,/Node entry=true/);
+    assert.match(r.stderr,provider==='codex'?/Windows bootstrap=true/:/Windows bootstrap=false/);
+    if(mode==='config-invalid') {
+      assert.match(r.stderr,/config validated=false, receipt write failed=false/);
+      assert.match(r.stderr,/Node entry observed but configuration validation not observed/);
+      assert.ok(n.read().callbacks.every(c=>!c.context&&c.advisory));
+    } else {
+      assert.match(r.stderr,/config validated=true, receipt write failed=true/);
+      assert.match(r.stderr,/logging failed or metadata was removed/);
+      assert.ok(n.read().callbacks.every(c=>c.context));
+    }
+    assert.match(r.stderr,/Provider receipt and model adherence remain unknown/);
+    assert.doesNotMatch(r.stderr,/Keep the public interface|synthetic-do-not-retain/);
+    assert.equal(fs.existsSync(n.read().hook_directory),false);
   }
 });
 
@@ -401,17 +423,16 @@ test('session-only plugin and Codex config preserve user flags, permissions, aut
 test('Windows encoded command executes actual adapter with spaces and apostrophes and synthetic event',()=>{
   if(process.platform!=='win32') return;
   const f=fixture();f.options.provider='codex';
-  const c=config(f),commands=adapter.hookCommands(script,c.file);
-  assert.ok(c.setup.args[1].includes('command_windows='+JSON.stringify(commands.commandWindows)));
+  const c=config(f),commands={commandWindows:JSON.parse(/command_windows=("(?:\\.|[^"\\])*")/.exec(c.setup.args[1])[1])};
   assert.ok(c.setup.args[1].includes('additionalContextLimit=0'));
   const encoded=commands.commandWindows.split(' ').at(-1);
-  const shell=/^"([^"]+)" -NoProfile /.exec(commands.commandWindows);
-  assert.ok(shell,'Windows hook must use a quoted absolute system PowerShell path');
+  const shell=/^([A-Za-z]:\\[A-Za-z0-9_.\\-]+) -NoProfile /.exec(commands.commandWindows);
+  assert.ok(shell,'Windows hook must use a shell-neutral absolute system PowerShell path');
   assert.equal(shell[1].toLowerCase(),path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe').toLowerCase());
   // Poison both implicit search locations; only the selected absolute helper may run.
   fs.writeFileSync(path.join(f.project,'powershell.exe'),'not a Windows executable');
   const r=spawnSync(shell[1],['-NoProfile','-NonInteractive','-EncodedCommand',encoded],{
-    env:{...process.env,PATH:f.project},
+    env:{...process.env,...c.setup.env,PATH:f.project},
     cwd:f.project,input:JSON.stringify({session_id:'synthetic-codex-session',transcript_path:null,model:'synthetic-model',permission_mode:'default',
       hook_event_name:'SessionStart',source:'compact',cwd:f.project}),encoding:'utf8',timeout:15000});
   assert.equal(r.status,0,r.stderr);assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext,/Keep the public interface stable/);
@@ -431,6 +452,196 @@ test('unavailable Windows hook interpreter fails closed and cleans up without af
   } finally {
     if(saved===undefined) delete process.env.SystemRoot; else process.env.SystemRoot=saved;
   }
+  // Do not remove the outer quotes by accepting shell-special interpreter paths.
+  const redirected=path.join(root,'Windows & space');fs.symlinkSync(saved,redirected,'junction');
+  try {
+    process.env.SystemRoot=redirected;
+    assert.throws(()=>adapter.hookCommands(script,path.join(root,'adapter.json')),{code:'windows_hook_interpreter_path_unsupported'});
+  } finally {process.env.SystemRoot=saved;fs.unlinkSync(redirected);}
+});
+
+test('generated Codex TOML hook survives real Windows outer shells before reaching the adapter',()=>{
+  if(process.platform!=='win32') return;
+  const runner=path.join(root,'windows-hook-runner.exe');
+  const built=spawnSync('rustc',[path.join(__dirname,'../tests/fixtures/windows-hook-runner.rs'),'-o',runner],{encoding:'utf8',timeout:60000});
+  assert.equal(built.status,0,built.error?.message||built.stderr);
+  const f=fixture();f.options.provider='codex';
+  const note='Preserve café, 日本語, emoji 😀 and literal $ & % ! characters';
+  f.ok(['memory','add',note,'--source','offline fixture']);
+  const scriptDirectory=path.join(root,"adapter ' & $ ; ( ) % ! ^ ü");fs.mkdirSync(scriptDirectory);
+  const copiedScript=path.join(scriptDirectory,'native.cjs');fs.copyFileSync(script,copiedScript);
+  fs.writeFileSync(path.join(f.project,'powershell.exe'),'poisoned implicit search');
+  fs.writeFileSync(path.join(f.project,'node.exe'),'poisoned implicit search');
+  const failures=[];
+  for(const mode of ['cmd-raw','cmd-escaped','powershell']) {
+    const directory=fs.mkdtempSync(path.join(root,'shell-hooks-'));
+    const c={setup:adapter.configure(f.options,directory,copiedScript)};
+    const configFile=path.join(directory,'adapter.json'),startupFile=path.join(directory,'startup.bin');
+    const resetStartup=()=>fs.writeFileSync(startupFile,'SCX10000');
+    // Extract exactly the string written in the invocation's TOML, rather than
+    // split it into executable/args (which bypasses the actual failing layer).
+    const command=JSON.parse(/command_windows=("(?:\\.|[^"\\])*")/.exec(c.setup.args[1])[1]);
+    assert.ok(command.length<=8000,'encoded command must fit cmd dispatch');
+    const shell=path.join(process.env.SystemRoot,'System32',mode==='powershell'?'WindowsPowerShell/v1.0/powershell.exe':'cmd.exe');
+    const run=(line,input=JSON.stringify({hook_event_name:'SessionStart',source:'startup',cwd:f.project}))=>
+      spawnSync(runner,[mode,shell,line],{cwd:f.project,env:{...process.env,...c.setup.env,PATH:f.project},encoding:'utf8',timeout:15000,input});
+    if(mode!=='cmd-raw') {
+      const old=run(command.replace(/^(\S+)/,'"$1"'));
+      assert.equal(old.status,1);assert.equal(fs.existsSync(c.setup.receipt),false);
+      assert.equal(old.stdout,'');assert.match(old.stderr,mode==='powershell'?/UnexpectedToken/:/not recognized/);
+      assert.deepEqual(adapter.startupState(configFile),{bootstrap:false,node:false,config:false,receiptFailed:false});
+    }
+    const r=run(command);
+    if(r.status!==0) {failures.push({mode,status:r.status,receipt:fs.existsSync(c.setup.receipt),stderr:r.stderr});continue;}
+    const entries=fs.readFileSync(c.setup.receipt,'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(adapter.startupState(configFile),{bootstrap:true,node:true,config:true,receiptFailed:false});
+    assert.deepEqual(entries.map(e=>e.stage),['callback_requested','retrieval_attempted','context_prepared','output_written']);
+    const text=JSON.parse(r.stdout).hookSpecificOutput.additionalContext;
+    assert.ok(Buffer.byteLength(text)<=8192);
+    const packet=JSON.parse(text.slice(text.indexOf('\n')+1));
+    assert.equal(text,adapter.validatePacket(JSON.stringify(packet)+'\n',f.project));
+    assert.equal(packet.records[0].content,'Keep the public interface stable');
+    assert.equal(packet.records.find(r=>r.kind==='note').content,note);
+    // Before-config failures have no receipt, and must not masquerade as an
+    // input/validation failure. Only safe stage codes are emitted by SwapCtx.
+    fs.unlinkSync(c.setup.receipt);
+    resetStartup();
+    const missingAdapter=adapter.hookCommands(path.join(root,'missing-adapter.cjs'),path.join(directory,'adapter.json')).commandWindows;
+    const unavailable=run(missingAdapter);
+    assert.equal(unavailable.status,1);assert.match(unavailable.stderr,/hook_adapter_unavailable/);
+    assert.equal(unavailable.stdout,'');assert.equal(fs.existsSync(c.setup.receipt),false);
+    assert.deepEqual(adapter.startupState(configFile),{bootstrap:true,node:false,config:false,receiptFailed:false});
+    resetStartup();
+    const encoded=command.split(' ').at(-1);
+    const ps=Buffer.from(encoded,'base64').toString('utf16le');
+    const missingNode=ps.replace("'"+process.execPath.replace(/'/g,"''")+"'", "'"+path.join(root,'missing-node.exe').replace(/'/g,"''")+"'");
+    const startup=run(command.slice(0,-encoded.length)+Buffer.from(missingNode,'utf16le').toString('base64'));
+    assert.equal(startup.status,1);assert.match(startup.stderr,/hook_node_start_failed/);
+    assert.equal(startup.stdout,'');assert.equal(fs.existsSync(c.setup.receipt),false);
+    assert.deepEqual(adapter.startupState(configFile),{bootstrap:true,node:false,config:false,receiptFailed:false});
+    resetStartup();
+    const savedConfig=fs.readFileSync(configFile);
+    fs.writeFileSync(configFile,'{private-invalid-config');
+    const invalid=run(command);
+    assert.equal(invalid.status,0);assert.match(invalid.stderr,/hook_config_invalid/);
+    assert.equal(JSON.parse(invalid.stdout).hookSpecificOutput,undefined);
+    assert.doesNotMatch(invalid.stdout+invalid.stderr,/private-invalid-config/);
+    assert.deepEqual(adapter.startupState(configFile),{bootstrap:true,node:true,config:false,receiptFailed:false});
+    assert.equal(fs.existsSync(c.setup.receipt),false);fs.writeFileSync(configFile,savedConfig);
+    const inputFailure=run(command,'{invalid');
+    assert.equal(inputFailure.status,0);assert.match(inputFailure.stderr,/hook_input_invalid/);
+    assert.equal(adapter.summarizeReceipts(c.setup.receipt).prepared,0);
+    fs.unlinkSync(c.setup.receipt);fs.writeFileSync(c.setup.receipt+'.lock','');
+    const logFailure=run(command);
+    assert.equal(logFailure.status,0);assert.match(logFailure.stderr,/continuity metadata unavailable/);
+    assert.ok(JSON.parse(logFailure.stdout).hookSpecificOutput.additionalContext);
+    assert.equal(fs.existsSync(c.setup.receipt),false);assert.ok(fs.existsSync(c.setup.receipt+'.incomplete'));
+    assert.deepEqual(adapter.startupState(configFile),{bootstrap:true,node:true,config:true,receiptFailed:true});
+    fs.unlinkSync(c.setup.receipt+'.lock');
+  }
+  assert.deepEqual(failures,[]);
+});
+
+test('startup observations stay bounded, reject redirected/corrupt metadata and never gate valid context',()=>{
+  const f=fixture(),c=config(f),file=path.join(c.directory,'startup.bin');
+  const event={hook_event_name:'SessionStart',source:'startup',cwd:f.project};
+  assert.equal(fs.statSync(file).size,8);
+  const corrupt='private marker text must not escape';fs.writeFileSync(file,corrupt);
+  let r=hook(f,c,event);assert.equal(r.status,0,r.stderr);
+  assert.ok(JSON.parse(r.stdout).hookSpecificOutput.additionalContext);
+  assert.match(r.stderr,/hook_startup_metadata_unavailable/);assert.doesNotMatch(r.stderr,/private marker/);
+  assert.equal(fs.readFileSync(file,'utf8'),corrupt);
+  fs.unlinkSync(file);
+  r=hook(f,c,event);assert.equal(r.status,0,r.stderr);assert.ok(JSON.parse(r.stdout).hookSpecificOutput.additionalContext);
+  assert.equal(fs.existsSync(file),false,'legacy hook must not create a diagnostic target');
+  const outside=path.join(root,'outside-startup');fs.mkdirSync(outside);
+  const target=path.join(outside,'startup.bin');fs.writeFileSync(target,'SCX10000');
+  if(process.platform==='win32') {
+    fs.symlinkSync(outside,file,'junction');r=hook(f,c,event);
+    assert.equal(r.status,0);assert.equal(fs.readFileSync(target,'utf8'),'SCX10000');fs.unlinkSync(file);
+  } else {
+    fs.symlinkSync(target,file);r=hook(f,c,event);
+    assert.equal(r.status,0);assert.equal(fs.readFileSync(target,'utf8'),'SCX10000');fs.unlinkSync(file);
+  }
+});
+
+test('Codex definitions stay stable for the same scope while child paths remain launch-local',async()=>{
+  const f=fixture();f.options.provider='codex';
+  const first=config(f),next=config(f);
+  assert.equal(first.setup.args[1],next.setup.args[1],'temporary paths must not change the reviewed definition');
+  assert.notDeepEqual(first.setup.env,next.setup.env,'callback state must remain launch-local');
+  const other=fixture();other.options.provider='codex';
+  assert.notEqual(first.setup.args[1],config(other).setup.args[1],'another project/store requires a different definition');
+  assert.match(first.setup.args[1],/^hooks.SessionStart=\[\{matcher="\^\(startup\|resume\|clear\|compact\|fork\)\$",hooks=\[/);
+  assert.match(first.setup.args[1],/additionalContextLimit=0/);
+  assert.doesNotMatch(first.setup.args[1],/bypass|features\.hooks/);
+  const warnings=[];
+  await adapter.launch(f.options,[],{probe:()=>true,retrieve:()=>'',tempRoot:root,warn:s=>warnings.push(s),runProvider:async()=>0});
+  assert.match(warnings.join(),/definition is stable/);
+  assert.match(warnings.join(),/Windows bootstrap=false, Node entry=false, config validated=false/);
+  assert.match(warnings.join(),/Do not submit a model prompt/);
+});
+
+test('stable Codex callback pins adapter bytes, scope and launch-local environment without persisting hooks',async()=>{
+  if(process.platform!=='win32') return;
+  const f=fixture();f.options.provider='codex';
+  const copy=path.join(root,"stable adapter ' & ü.cjs");fs.copyFileSync(script,copy);
+  const make=(options=f.options)=>{
+    const directory=fs.mkdtempSync(path.join(root,'stable-session-'));
+    return {directory,setup:adapter.configure(options,directory,copy)};
+  };
+  const a=make(),b=make(),other=fixture();other.options.provider='codex';const c=make(other.options);
+  const windows=setup=>JSON.parse(/command_windows=("(?:\\.|[^"\\])*")/.exec(setup.args[1])[1]);
+  const shell=path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
+  const run=(session,env=session.setup.env,cwd=f.project)=>spawnSync(shell,['-NoProfile','-NonInteractive','-EncodedCommand',windows(session.setup).split(' ').at(-1)],{
+    cwd,env:{...Object.fromEntries(Object.entries(process.env).filter(([key])=>!/^SWAPCTX_NATIVE_(SCRIPT|CONFIG)$/i.test(key))),...env},
+    input:JSON.stringify({hook_event_name:'SessionStart',source:'resume',cwd}),encoding:'utf8',timeout:15000});
+  assert.equal(a.setup.args[1],b.setup.args[1]);
+  const first=run(a);assert.equal(first.status,0,first.stderr);assert.ok(JSON.parse(first.stdout).hookSpecificOutput.additionalContext);
+  // Equivalent definition can read only the session explicitly supplied in its
+  // child environment. Receipts are not shared between simultaneous launches.
+  const second=run(a,b.setup.env);assert.equal(second.status,0,second.stderr);
+  assert.equal(adapter.summarizeReceipts(a.setup.receipt).written,1);
+  assert.equal(adapter.summarizeReceipts(b.setup.receipt).written,1);
+  const mismatch=run(a,c.setup.env,other.project);
+  assert.equal(mismatch.status,0);assert.match(mismatch.stderr,/hook_session_scope_mismatch/);
+  assert.equal(JSON.parse(mismatch.stdout).hookSpecificOutput,undefined);
+  const missing=run(a,{});assert.equal(missing.status,1);assert.match(missing.stderr,/hook_session_environment_invalid/);assert.equal(missing.stdout,'');
+  fs.appendFileSync(copy,"\nprocess.stdout.write('MUST-NOT-EXECUTE');\n");
+  const changed=make();assert.notEqual(a.setup.args[1],changed.setup.args[1],'adapter changes must change reviewed command');
+  const tampered=run(a);assert.equal(tampered.status,1);assert.match(tampered.stderr,/hook_adapter_integrity_failed/);
+  assert.equal(tampered.stdout,'');assert.doesNotMatch(tampered.stderr,/MUST-NOT-EXECUTE/);
+  fs.copyFileSync(script,copy);
+  const saved=fs.readFileSync(path.join(a.directory,'adapter.json'));
+  const configValue=JSON.parse(saved);configValue.dataDir=other.dataDir;
+  fs.writeFileSync(path.join(a.directory,'adapter.json'),JSON.stringify(configValue));
+  const storeChanged=run(a);assert.equal(storeChanged.status,0);assert.match(storeChanged.stderr,/hook_session_scope_mismatch/);
+  assert.equal(JSON.parse(storeChanged.stdout).hookSpecificOutput,undefined);
+  fs.writeFileSync(path.join(a.directory,'adapter.json'),saved);
+  const anotherStore=make({...f.options,dataDir:other.dataDir});
+  assert.notEqual(a.setup.args[1],anotherStore.setup.args[1]);
+  const anotherExecutable=make({...f.options,swapctx:process.execPath});
+  assert.notEqual(a.setup.args[1],anotherExecutable.setup.args[1]);
+  fs.rmSync(a.directory,{recursive:true}); // Fixture-owned; simulate normal cleanup.
+  const expired=run(a);assert.equal(expired.status,0);assert.match(expired.stderr,/hook_config_invalid/);
+  assert.equal(JSON.parse(expired.stdout).hookSpecificOutput,undefined);
+});
+
+test('native child environment overrides stale aliases without changing parent state or other provider options',async()=>{
+  const f=fixture();f.options.provider='codex';
+  const saved=process.env.SWAPCTX_NATIVE_CONFIG;
+  process.env.SWAPCTX_NATIVE_CONFIG='stale-parent-value';
+  try {
+    await adapter.launch(f.options,['resume','fixture'],{probe:()=>true,retrieve:()=>'',tempRoot:root,warn:()=>{},
+      runProvider:async(_exe,args,options)=>{
+        assert.deepEqual(args.slice(-2),['resume','fixture']);
+        assert.notEqual(options.env.SWAPCTX_NATIVE_CONFIG,'stale-parent-value');
+        assert.equal(fs.existsSync(options.env.SWAPCTX_NATIVE_CONFIG),true);
+        assert.equal(Object.keys(options.env).filter(k=>k.toLowerCase()==='swapctx_native_config').length,1);
+        assert.equal(process.env.SWAPCTX_NATIVE_CONFIG,'stale-parent-value');return 0;
+      }});
+    assert.equal(process.env.SWAPCTX_NATIVE_CONFIG,'stale-parent-value');
+  } finally {if(saved===undefined)delete process.env.SWAPCTX_NATIVE_CONFIG;else process.env.SWAPCTX_NATIVE_CONFIG=saved;}
 });
 
 test('missing callbacks, provider exit errors and interrupted launches are diagnosed and cleaned',async()=>{
@@ -438,7 +649,10 @@ test('missing callbacks, provider exit errors and interrupted launches are diagn
   const base={probe:()=>true,retrieve:()=>'',tempRoot:root,warn:s=>warnings.push(s)};
   const before=fs.readdirSync(root).sort();
   assert.equal(await adapter.launch(f.options,['--resume','id'],{...base,runProvider:async()=>13}),13);
-  assert.match(warnings.join(),/no hook callback/);assert.deepEqual(fs.readdirSync(root).sort(),before);
+  assert.match(warnings.join(),/no hook callback/);assert.match(warnings.join(),/shell launch, Node startup, adapter\/config loading or receipt writing/);
+  assert.match(warnings.join(),/does not test provider shell dispatch/);assert.deepEqual(fs.readdirSync(root).sort(),before);
+  assert.match(warnings.join(),/Windows bootstrap=false, Node entry=false, config validated=false, receipt write failed=false/);
+  assert.match(warnings.join(),/cannot distinguish skipped loading\/trust\/policy/);
   await assert.rejects(()=>adapter.launch(f.options,[],{...base,runProvider:async()=>{throw Error('interrupted fixture');}}),/interrupted fixture/);
   assert.deepEqual(fs.readdirSync(root).sort(),before);
   await assert.rejects(()=>adapter.launch(f.options,[],{...base,retrieve:()=>{throw Error('invalid context');}}),/invalid context/);

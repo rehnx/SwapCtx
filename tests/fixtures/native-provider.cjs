@@ -13,7 +13,7 @@ if(args.length===1&&['--version','--help'].includes(args[0])) {
   process.exit(0);
 }
 report.ui_started=true;report.arguments=args;save();
-let executable,hookArgs,directory;
+let executable,hookArgs,directory,windowsVerbatimArguments=false;
 if(provider==='claude'&&args.includes('--plugin-dir')) {
   directory=args[args.indexOf('--plugin-dir')+1];
   const definition=JSON.parse(fs.readFileSync(path.join(directory,'hooks/hooks.json'),'utf8')).hooks.SessionStart[0].hooks[0];
@@ -22,20 +22,20 @@ if(provider==='claude'&&args.includes('--plugin-dir')) {
 } else if(provider==='codex'&&args.includes('-c')) {
   const definition=args[args.indexOf('-c')+1];
   const command=JSON.parse(/command_windows=("(?:\\.|[^"\\])*")/.exec(definition)[1]);
-  executable=/^"([^"]+)" /.exec(command)[1];
-  const encoded=command.split(' ').at(-1);
-  hookArgs=['-NoProfile','-NonInteractive','-EncodedCommand',encoded];
-  const decoded=Buffer.from(encoded,'base64').toString('utf16le');
-  const values=[...decoded.matchAll(/'((?:[^']|'')*)'/g)].map(m=>m[1].replace(/''/g,"'"));
-  directory=path.dirname(values.at(-1));report.script_directory=path.dirname(values[1]);
+  executable=path.join(process.env.SystemRoot,'System32','cmd.exe');
+  hookArgs=['/D','/S','/C','"'+command+'"'];windowsVerbatimArguments=true;
+  directory=path.dirname(process.env.SWAPCTX_NATIVE_CONFIG);
+  report.script_directory=path.dirname(process.env.SWAPCTX_NATIVE_SCRIPT);
 }
 report.hook_directory=directory;save();
+if(directory&&process.env.SWAPCTX_FAKE_MODE==='config-invalid') fs.writeFileSync(path.join(directory,'adapter.json'),'{invalid');
+if(directory&&process.env.SWAPCTX_FAKE_MODE==='receipt-lock') fs.writeFileSync(path.join(directory,'receipt.jsonl.lock'),'fixture');
 if(process.env.SWAPCTX_FAKE_MODE==='interrupt') process.kill(process.pid,'SIGTERM');
 if(directory&&process.env.SWAPCTX_FAKE_MODE!=='no-hooks') {
   const sources=['startup','resume','compact','clear','fork'];
   for(const source of sources) {
     const event={hook_event_name:'SessionStart',source,cwd:process.env.SWAPCTX_FAKE_EVENT_CWD||process.cwd(),session_id:'synthetic-do-not-retain'};
-    const result=spawnSync(executable,hookArgs,{input:process.env.SWAPCTX_FAKE_MODE==='bad-hook'?'{invalid':JSON.stringify(event),encoding:'utf8',timeout:12000});
+    const result=spawnSync(executable,hookArgs,{windowsVerbatimArguments,input:process.env.SWAPCTX_FAKE_MODE==='bad-hook'?'{invalid':JSON.stringify(event),encoding:'utf8',timeout:12000});
     let output;try{output=JSON.parse(result.stdout);}catch{output={};}
     const text=output.hookSpecificOutput?.additionalContext;
     let packet;try{packet=JSON.parse(text.slice(text.indexOf('\n')+1));}catch{packet=null;}
