@@ -49,8 +49,10 @@ swapctx native claude --context `
 Node.js 24+ is required for the optional context adapter. Ordinary native launch
 of a native `.exe` does not need Node or an initialized database. Standard npm
 installs of `@openai/codex` and `@anthropic-ai/claude-code` can instead resolve
-their declared JavaScript entry points and invoke Node directly. The shim is
-never parsed or executed. These layouts need Node even without context. On
+their declared JavaScript entry points and invoke Node directly, or launch a
+contained package-declared `.exe` directly. The shim is never parsed or executed.
+Only JavaScript entry points need Node for plain launch; context/check always
+requires Node.js 24+. On
 Windows, overrides must be absolute existing `.exe` files or standard npm
 `.cmd`/`.bat` shims with valid, contained package metadata. Arbitrary batch/PowerShell,
 pnpm/Yarn indirection and packages escaping their prefix remain unsupported by

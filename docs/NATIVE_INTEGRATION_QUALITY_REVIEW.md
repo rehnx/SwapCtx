@@ -4,6 +4,48 @@ Date: 2026-10-20. Baseline HEAD: `4bf04f0`. The source-only publication review's
 uncommitted documentation changes were present at the start and are preserved.
 This is an engineering sprint, not a new phase or release preparation.
 
+## Follow-up: package-declared native Windows executables
+
+Baseline for this targeted fix: `87b679d`. A reported Claude Code 2.1.304 npm
+installation declares `bin/claude.exe`; the resolver incorrectly admitted only
+JS/CJS/MJS entries. It now also accepts a declared, canonical, contained `.exe`
+and routes it through the existing direct executable target. The shell shim is
+never interpreted. Plain launching requires no Node lookup; context/check still
+requires Node.js 24+. Health reports `ready (native executable)` without probing
+the executable. No Node adapter change is needed: executable targets already
+support capability probes, native launching and lifecycle configuration.
+
+Exact package identity, duplicate-key rejection, relative path validation,
+canonical package/prefix containment and current-executable recursion rejection
+remain required. Unsupported extensions and escaped paths remain rejected.
+This does not authenticate the package publisher or certify Claude 2.1.304 hooks.
+
+`tests/fixtures/native-provider-exe.rs` builds a disposable synthetic executable
+which invokes only the existing local JS fixture using explicit absolute paths.
+`scripts/check-native.cjs` tests the declared `bin/claude.exe` layout: read-only
+health with no provider probe, plain launch without Node on PATH, literal
+arguments, exit status, no database creation, and the actual CLI-to-adapter-to-hook
+chain for startup/resume/compact/clear/fork with refreshed requirements and cleanup.
+Negative fixtures cover traversal, junction escape, alternate streams, missing
+entries and self-recursion. Existing JS package regressions remain in place.
+The fixture uses the local Rust compiler; it never starts an installed provider.
+
+Changed files for this follow-up: `src/native.rs`, `scripts/check-native.cjs`,
+`tests/fixtures/native-provider-exe.rs`, this report, `README.md`, `SUPPORT.md`,
+`docs/PHASE8_NATIVE_PROVIDERS.md` and `docs/WINDOWS_RELEASE.md`. Existing
+uncommitted publication documentation and other untracked files are preserved.
+
+Verification for this follow-up (Windows, offline): targeted executable fixture
+passed, then `scripts/verify.ps1 -DeterministicOnly` exited 0. Formatting, Clippy
+with warnings denied, 55 Rust tests (one performance test intentionally ignored),
+release build and all 159 supplemental deterministic checks passed, including
+40 native checks and 19 packaging checks. Documentation verification passed
+(12 files, 59 local links; provider examples checked through help only).
+Logs: `.build/npm-exe-verify.stdout.log` and `.build/npm-exe-verify.stderr.log`.
+No installed provider was launched, no real npm installation was modified, and
+no model/API call or publication occurred. Real-provider compatibility remains
+unverified; the reported 2.1.304 installation was reproduced synthetically.
+
 ## Findings and fixes
 
 | Confirmed gap | Result |
@@ -27,7 +69,7 @@ the final gate.
 | Route | Windows layouts | Context sharing |
 | --- | --- | --- |
 | `swapctx launch codex` / `claude` | Existing legacy `.exe`, `.cmd`, `.bat` handoff | None; unchanged. |
-| `swapctx native codex` / `claude`, or menu answer No | Native `.exe`, or recognized standard npm prefix | None. Native executable needs no Node; npm needs Node to run its JS entry point. |
+| `swapctx native codex` / `claude`, or menu answer No | Native `.exe`, or recognized standard npm prefix | None. Native executable needs no Node; npm JS entries need Node, while package-declared native `.exe` entries launch directly. |
 | `swapctx native codex --context` / `claude --context`, or menu answer y | Same resolution; Node.js 24+ required for the adapter | Explicit opt-in; existing lifecycle admission and validation apply. |
 | `swapctx native codex --check` / `claude --check` | Same file resolution; Node.js 24+ checks the adapter | No provider process, no supplied context to a provider. |
 
@@ -36,9 +78,9 @@ absolute PATH prefixes excluding the current directory and its canonical aliases
 can supply standard npm `.cmd`/`.bat` markers. Explicit overrides must be absolute.
 Npm resolution reads at most 64 KiB of UTF-8 `package.json` using the already
 bundled SQLite JSON parser in memory. It requires the expected package name,
-unambiguous JSON keys, a declared provider bin, a contained JS/CJS/MJS file and
+unambiguous JSON keys, a declared provider bin, a contained JS/CJS/MJS or native EXE file and
 canonical package containment within the installation prefix. Traversal, drive/
-ADS forms, control characters, non-JS entry points and junction escapes fail closed.
+ADS forms, control characters, unsupported entry-point extensions and junction escapes fail closed.
 
 No new dependency, SQLite schema change, disk parser database or shell evaluation
 was introduced. Argument values remain individual process arguments, including

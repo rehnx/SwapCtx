@@ -28,7 +28,7 @@ pub struct Options {
     /// Absolute native executable or standard npm provider shim.
     #[arg(long)]
     pub executable: Option<PathBuf>,
-    /// Absolute Node executable; 24+ for context/check, also used by npm installs.
+    /// Absolute Node executable; 24+ for context/check, also used by npm JS entries.
     #[arg(long)]
     pub node: Option<PathBuf>,
     /// Arguments passed unchanged to the original UI, after --.
@@ -110,12 +110,24 @@ fn npm_target(shim: &Path, provider: Provider) -> Result<Target> {
     if !script.starts_with(&package)
         || !script.is_file()
         || !script.extension().is_some_and(|s| {
-            ["js", "cjs", "mjs"]
+            ["js", "cjs", "mjs", "exe"]
                 .iter()
                 .any(|ext| s.eq_ignore_ascii_case(ext))
         })
     {
         bail!("Unsupported npm provider entry point");
+    }
+    if script
+        .extension()
+        .is_some_and(|s| s.eq_ignore_ascii_case("exe"))
+    {
+        if script == std::env::current_exe()?.canonicalize()? {
+            bail!("Provider resolves to SwapCtx itself");
+        }
+        return Ok(Target {
+            executable: Some(script),
+            script: None,
+        });
     }
     // Node's main-module resolver rejects Rust's verbatim drive paths. Preserve
     // canonical identity checks above, but pass a conventional Windows path.

@@ -90,6 +90,62 @@ test('native health is read-only and never even probes either synthetic provider
   }
 });
 
+test('npm declared native exe supports health, plain launch and the complete lifecycle chain without executing its shim',()=>{
+  if(process.platform!=='win32') return;
+  const f=fixture(),n=npmFixture(f,'claude');
+  const native=path.join(n.pkg,'bin','claude.exe');
+  fs.mkdirSync(path.dirname(native));
+  const compiled=spawnSync('rustc',[path.join(__dirname,'../tests/fixtures/native-provider-exe.rs'),'-o',native],{encoding:'utf8',timeout:60000});
+  assert.equal(compiled.status,0,compiled.error?.message||compiled.stderr);
+  const manifest=path.join(n.pkg,'package.json');
+  const metadata={name:'@anthropic-ai/claude-code',version:'2.1.304',bin:{claude:'bin/claude.exe'}};
+  fs.writeFileSync(manifest,JSON.stringify(metadata));
+  n.env.SWAPCTX_FAKE_NODE=process.execPath;
+  n.env.SWAPCTX_FAKE_SCRIPT=path.join(n.pkg,'fixture.cjs');
+  const before=fs.readFileSync(path.join(f.dataDir,'swapctx.db'));
+  const health=n.run(['--check']);
+  assert.equal(health.status,0,health.stderr);assert.match(health.stdout,/ready \(native executable\)/);
+  assert.equal(fs.existsSync(n.report),false);
+  assert.deepEqual(fs.readFileSync(path.join(f.dataDir,'swapctx.db')),before);
+  // No Node lookup is needed for plain native entry points. The synthetic exe
+  // alone knows the absolute fixture runtime; neither shim nor PATH supplies it.
+  n.env.PATH=[f.project,n.bin].join(path.delimiter);
+  const missing=path.join(root,'no-exe-store-'+(++sequence)),args=['--resume','space & | < > ^ % ! " literal'];
+  n.env.SWAPCTX_FAKE_EXIT='27';
+  const plain=n.run(['--',...args],missing);
+  assert.equal(plain.status,27,plain.stderr);assert.deepEqual(n.read().arguments,args);
+  assert.deepEqual(n.read().probes,[]);assert.equal(fs.existsSync(missing),false);
+  delete n.env.SWAPCTX_FAKE_EXIT;
+  fs.unlinkSync(n.report);
+  n.env.SWAPCTX_FAKE_MODE='refresh';
+  const context=n.run(['--context','--node',process.execPath,'--','-c','literal & value']);
+  assert.equal(context.status,0,context.stderr);
+  const report=n.read();assert.deepEqual(report.probes,['--version','--help']);
+  assert.deepEqual(report.arguments.slice(-2),['-c','literal & value']);
+  assert.deepEqual(report.callbacks.map(c=>c.source),['startup','resume','compact','clear','fork']);
+  for(const c of report.callbacks) assert.ok(c.context&&c.expected_requirement&&c.project_matches&&c.protocol_valid&&c.mandatory_complete,JSON.stringify(c));
+  assert.match(context.stderr,/5 contexts prepared, 5 output writes completed, 0 failure observations/);
+  assert.match(context.stderr,/Provider receipt and model adherence remain unknown/);
+  for(const dir of [report.hook_directory,report.script_directory]) assert.equal(fs.existsSync(dir),false);
+  fs.unlinkSync(n.report);
+  const outside=path.join(n.bin,'outside');fs.mkdirSync(outside);
+  fs.copyFileSync(native,path.join(outside,'escape.exe'));
+  const redirect=path.join(n.pkg,'redirect');fs.symlinkSync(outside,redirect,'junction');
+  for(const bin of ['../outside/escape.exe','redirect/escape.exe','bin/claude.exe:stream','bin/missing.exe']) {
+    fs.writeFileSync(manifest,JSON.stringify({...metadata,bin:{claude:bin}}));
+    const bad=n.run(['--check','--node',process.execPath]);
+    assert.equal(bad.status,1);assert.match(bad.stdout,/unsupported_provider_layout/);
+    assert.equal(fs.existsSync(n.report),false);
+  }
+  fs.unlinkSync(redirect);
+  const self=path.join(n.pkg,'bin','self.exe');fs.copyFileSync(exe,self);
+  fs.writeFileSync(manifest,JSON.stringify({...metadata,bin:{claude:'bin/self.exe'}}));
+  const recursive=spawnSync(self,['--data-dir',f.dataDir,'native','claude','--check','--node',process.execPath],
+    {cwd:f.project,env:n.env,encoding:'utf8',timeout:10000});
+  assert.equal(recursive.status,1);assert.match(recursive.stdout,/unsupported_provider_layout/);
+  assert.equal(fs.existsSync(n.report),false);
+});
+
 test('full CLI handles both providers missing hooks, invalid events, wrong projects and provider exits without claiming receipt',()=>{
   if(process.platform!=='win32') return;
   for(const provider of ['codex','claude']) for(const mode of ['no-hooks','bad-hook','outside','nested','error','interrupt']) {
