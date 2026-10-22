@@ -7,12 +7,10 @@ Current review evidence is in [Phase 10](docs/PHASE10_PRODUCTION_HARDENING.md) a
 
 ## Reporting a vulnerability
 
-**A private reporting channel is a pending maintainer release decision.** This
-checkout cannot establish whether GitHub private vulnerability reporting is
-enabled. No private email address or response-time commitment is advertised.
-GitHub documents this reporting feature for public repositories; a private
-repository's 404 cannot establish its future state. The
-[owner checklist](docs/OWNER_LAUNCH_CHECKLIST.md) defines verified intake setup.
+Private vulnerability reporting is enabled for the public SwapCtx repository.
+Verified that GitHub displays the private **Report a vulnerability** form, including advisory details, impact, affected products and severity fields.
+The reporting form was not submitted. The security policy is being updated to document the confirmed reporting route.
+Unsigned-preview publisher trust remains a separate release decision.
 
 If the repository's **Security** tab offers **Report a vulnerability**, use that
 private GitHub form. Otherwise, request a private contact method from the
