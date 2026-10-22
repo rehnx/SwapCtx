@@ -116,6 +116,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Windows preview producer failed' }
           Get-Content .build/ci-preview/release-checks.json
           Get-Content .build/ci-preview/windows-acceptance.json
+      - name: Retain exact verified candidate for private release review
+        if: ${{ github.event.repository.private }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: swapctx-windows-preview-${{ github.event.pull_request.head.sha || github.sha }}
+          path: .build/ci-preview/
+          if-no-files-found: error
+          retention-days: 7
+      # Public repositories never upload candidates through this workflow.
   advisories:
     runs-on: ubuntu-latest
     steps:

@@ -11,7 +11,7 @@
   instructions. Public release and visibility require separate founder approval.
 
 This file tracks user-facing changes. Entries below are **unreleased**; the
-`0.1.0` Cargo version does not establish a published release or tag.
+Cargo version does not establish a published release or tag.
 
 ## Unreleased — static build diagnostics
 
