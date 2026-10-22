@@ -11,7 +11,7 @@ Work in the original Codex or Claude Code terminal interface.
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Windows x64](https://img.shields.io/badge/platform-Windows_x64-0078D4)](docs/WINDOWS_RELEASE.md)
 
-[Get started](#quick-start) · [Install](#installation) · [How it works](#how-memory-works) · [Documentation](#documentation)
+[Get started](#quick-start) · [Install](#installation) · [How it works](#how-memory-works) · [Documentation](#documentation) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -20,10 +20,9 @@ you want to keep, retrieve a scoped context packet, and optionally make it
 available through native provider lifecycle hooks. It provides **external
 memory**, not a larger model context window or guaranteed instruction adherence.
 
-**Preview preparation:** local offline verification is recorded; public release
-approval is pending. Native adapters are tested with synthetic events and fake
-providers. Actual native provider receipt and model adherence remain unverified.
-The build badge links to the configured workflow; it is not local test evidence.
+> **Preview Status & Verification Scope:** Local offline memory storage, CLI context retrieval, transactional database safety, and adapter hook outputs are verified deterministically with fake providers and synthetic events. Actual receipt by live native AI agents and model adherence remain unverified experimental integrations. The build badge links to CI workflow runs and is not local test evidence.
+
+---
 
 ## Your terminal. Your provider.
 
@@ -60,7 +59,9 @@ and the documented hook capabilities. A failed compatibility probe falls back to
 ordinary native launching with a warning. A supported integration with invalid
 or incomplete context fails closed. See [native setup and limits](docs/PHASE8_NATIVE_PROVIDERS.md).
 
-## Keep the knowledge that matters
+---
+
+## Key Capabilities
 
 Long conversations, compaction and new sessions can leave useful constraints
 outside an agent's current input. SwapCtx stores deliberately saved knowledge
@@ -79,6 +80,8 @@ still controls its context window, lifecycle and model requests.
 | Context continuity | Fresh validated snapshots on supported startup, resume, clear, compact and fork callbacks; no stale-text fallback. |
 | Boundary checks | Persistent deny/ask/audit rules evaluated on request. These do not intercept or prevent file writes. |
 | Recovery | Consistent whole-store backup, new-directory restore and project export/import. Diagnostics inspect without silently repairing data. |
+
+---
 
 ## Architecture
 
@@ -103,6 +106,8 @@ flowchart TD
 Storage and retrieval stay local. When sharing is enabled, the provider may send
 supplied memory to its configured services and retain it under its own policies.
 The existing managed Codex console remains a separate optional workflow.
+
+---
 
 ## Installation
 
@@ -153,16 +158,25 @@ This development build can depend on the VC runtime. For the independently
 compared static-runtime portable build, use the
 [local release procedure](docs/RELEASE_PREPARATION.md).
 
+---
+
 ## Quick start
 
-From a project directory, after installing SwapCtx:
+From any project directory, after installing SwapCtx:
 
 ```powershell
+# 1. Initialize project memory in current directory
 swapctx init
+
+# 2. Add deliberate requirements and decisions
 swapctx memory add --kind requirement --key compatibility --source 'project specification' 'Preserve public interfaces'
 swapctx memory add --kind decision 'Use the existing SQLite store'
+
+# 3. Search and view context packet
 swapctx memory search 'interfaces'
 swapctx context --protocol-version 1 --query 'interfaces' --max-bytes 8192
+
+# 4. Check project status and memory integrity
 swapctx status
 swapctx doctor
 ```
@@ -180,6 +194,8 @@ to find stale or competing knowledge, and `explain` to understand what fits in a
 local context packet. Before switching agents, preview a `handoff`; before review,
 use `inspect` and `verify` to collect local Git and memory evidence.
 [Daily workflow and command contracts](docs/INTELLIGENCE_WORKFLOWS.md).
+
+---
 
 ## How memory works
 
@@ -200,6 +216,8 @@ adapter completed a local write. Neither proves provider receipt, retention or
 model adherence. SwapCtx cannot detect every compaction or inspect hidden model
 state. [Context protocol](docs/CONTEXT_PROTOCOL.md) · [Continuity contract](docs/PHASE9_CONTEXT_CONTINUITY.md).
 
+---
+
 ## Privacy and security
 
 SwapCtx's storage/retrieval core has no network client, telemetry or background
@@ -214,6 +232,8 @@ enforce filesystem access, and an `ask` result opens no approval workflow.
 
 Run `swapctx privacy` or `swapctx capabilities` for local capability reporting.
 See [security boundaries and reporting](SECURITY.md) before sharing sensitive data.
+
+---
 
 ## Compatibility and requirements
 
@@ -231,6 +251,8 @@ with a warning. Passing a probe does not establish working hooks. See the
 [exact provider contracts and restrictions](docs/PHASE8_NATIVE_PROVIDERS.md).
 Non-Windows release compatibility has not been established by local Windows tests.
 
+---
+
 ## Project status
 
 | Area | Current evidence |
@@ -244,29 +266,35 @@ Non-Windows release compatibility has not been established by local Windows test
 Current integration evidence and remaining release work are recorded in the
 [unified integration report](docs/UNIFIED_INTEGRATION.md). Release review,
 distribution trust and independently verified native compatibility remain gates.
-There is no automatic conversation capture. Historical reports remain available below.
+There is no automatic conversation capture.
+
+---
 
 ## Documentation
 
-- [CLI usage and recovery](docs/USAGE.md) · [Windows installation](docs/WINDOWS_RELEASE.md)
-- [Native provider setup](docs/PHASE8_NATIVE_PROVIDERS.md) · [Managed Codex console](docs/PHASE5_EVERYDAY_CODEX.md)
-- [Context protocol](docs/CONTEXT_PROTOCOL.md) · [Continuity](docs/PHASE9_CONTEXT_CONTINUITY.md)
-- [Security hardening](docs/PHASE10_PRODUCTION_HARDENING.md) · [Release preparation](docs/RELEASE_PREPARATION.md)
-- [Release-readiness report](docs/PHASE11_RELEASE_READINESS.md) · [Local evidence](docs/evidence/phase11-release-preparation.json)
+- **Installation & Operations**: [Windows installation](docs/WINDOWS_RELEASE.md) · [CLI usage & recovery](docs/USAGE.md) · [Release preparation](docs/RELEASE_PREPARATION.md)
+- **Integrations**: [Native provider setup](docs/PHASE8_NATIVE_PROVIDERS.md) · [Managed Codex console](docs/PHASE5_EVERYDAY_CODEX.md)
+- **Protocols & Quality**: [Context protocol](docs/CONTEXT_PROTOCOL.md) · [Continuity contract](docs/PHASE9_CONTEXT_CONTINUITY.md) · [Memory quality](docs/MEMORY_QUALITY.md)
+- **Security & Readiness**: [Security hardening](docs/PHASE10_PRODUCTION_HARDENING.md) · [Release readiness report](docs/PHASE11_RELEASE_READINESS.md) · [Local evidence](docs/evidence/phase11-release-preparation.json)
 
-## Contributing
+---
 
-Focused fixes, reproducible bug reports and documentation improvements are
-welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md); use [SUPPORT.md](SUPPORT.md)
-for troubleshooting and [SECURITY.md](SECURITY.md) for sensitive reports.
-Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
-Follow the [community conduct policy](CODE_OF_CONDUCT.md).
-[Roadmap](docs/ROADMAP.md) · [Public preview decision record](docs/LAUNCH_READINESS.md) · [Draft release notes](docs/RELEASE_NOTES_0.1.0.md).
+## Community & Contributing
+
+We welcome contributions! Please review our contributor and community guidelines:
+- [Contributor Guide (`CONTRIBUTING.md`)](CONTRIBUTING.md) — Setup, guidelines, architecture map, and verification instructions.
+- [Code of Conduct (`CODE_OF_CONDUCT.md`)](CODE_OF_CONDUCT.md) — Standards for respectful community participation.
+- [Support & Troubleshooting (`SUPPORT.md`)](SUPPORT.md) — Common diagnostic steps and issue reporting guidelines.
+- [Security Policy (`SECURITY.md`)](SECURITY.md) — Vulnerability reporting and trust boundaries.
+- [Project Roadmap (`docs/ROADMAP.md`)](docs/ROADMAP.md) — Upcoming priorities and community contribution opportunities.
+- [Changelog (`CHANGELOG.md`)](CHANGELOG.md) — Historical release changes and notes.
 
 SwapCtx is licensed under [Apache-2.0](LICENSE). Dependency authors and licenses
 are acknowledged in [third-party notices](THIRD_PARTY_NOTICES.txt) and the
 [dependency guide](docs/DEPENDENCIES.md). Codex and Claude Code are separate
 products of their respective owners; SwapCtx is an independent project.
+
+---
 
 ## FAQ
 

@@ -1,13 +1,20 @@
 # Support and troubleshooting
 
-Start with [installation](docs/WINDOWS_RELEASE.md), [CLI usage](docs/USAGE.md) and
-[native provider setup](docs/PHASE8_NATIVE_PROVIDERS.md). General bug reports can
-use the repository's [issue tracker](https://github.com/rehnx/SwapCtx/issues).
-No hosted support service or response-time commitment is offered.
+Welcome to SwapCtx Support! If you encounter issues while running SwapCtx or setting up integrations, start with the following resources:
+
+- **Installation**: [Windows release guide](docs/WINDOWS_RELEASE.md)
+- **Commands & Memory CLI**: [CLI usage guide](docs/USAGE.md)
+- **Native AI Adapters**: [Native provider setup guide](docs/PHASE8_NATIVE_PROVIDERS.md)
+- **Contributor Setup**: [Contributor guide](CONTRIBUTING.md)
+
+General bug reports and feature ideas can be submitted via the repository's [issue tracker](https://github.com/rehnx/SwapCtx/issues).
+*Note: As an open-source project, no dedicated SLA, response-time commitment, or hosted support service is provided.*
+
+---
 
 ## Collect safe diagnostics
 
-From the affected project, these commands stay local and do not launch providers:
+Run these commands from your project folder to diagnose issues locally without launching external providers or transmitting data:
 
 ```powershell
 Get-Command swapctx -CommandType Application
@@ -17,25 +24,30 @@ swapctx status
 swapctx doctor
 ```
 
-Report the source revision or binary SHA-256, Windows version, exact command and
-exit code, expected behavior and a synthetic reproduction. Redact account names,
-private paths and any saved text. Do not upload databases, transcripts, provider
-configuration, credentials or environment dumps. Follow [SECURITY.md](SECURITY.md)
-for sensitive findings.
+When filing a report, please include:
+1. Source revision or binary SHA-256 fingerprint
+2. Windows OS version
+3. Exact command, arguments, and exit code
+4. Expected vs. actual behavior with a minimal synthetic reproduction
 
-## Common problems
+> **Privacy Warning:** Redact account names, private file paths, passwords, and project content. Do not upload SQLite databases, agent conversation transcripts, provider config files, credentials, or environment dumps. Follow [SECURITY.md](SECURITY.md) for sensitive findings.
 
-| Symptom | Check |
-| --- | --- |
-| `swapctx` is not found | Add its installation directory to the current process PATH or your user Path; reopen the terminal and verify `Get-Command`. |
-| Project not registered | Run `init` at the intended project root. A nested registered project has separate memory. Use the same `--data-dir` on every command when overriding storage. |
-| Node/provider executable missing | Core memory needs neither. Optional adapters need Node 24+; native mode requires underlying `.exe` files on Windows. Use absolute overrides from the native guide. |
-| Compatibility warning and plain UI | The version/help probe did not establish the required hook interface. Plain launching is preserved; context was not enabled. |
-| No callback recorded | Hooks may be untrusted, disabled, unsupported or skipped. Inspect provider diagnostics. Do not infer delivery from preflight preparation. |
-| Context withheld | Review memory freshness, conflicts, provenance and mandatory coverage locally. Do not bypass validation to force stale or incomplete requirements into the provider. |
-| Database busy | Close other writers and retry. Back up before maintenance; do not remove SQLite sidecars. |
-| Integrity error | Preserve the entire store. Restore a verified backup into a new explicit directory; `init` is not corruption repair. |
-| Installer destination exists | Choose a new directory. Installation deliberately never merges with an existing installation or data store. |
+---
 
-Persistent PATH changes, provider trust decisions and live-provider debugging are
-user-controlled actions. Routine project verification uses offline fixtures only.
+## Common problems & solutions
+
+| Symptom | Cause / Check | Solution |
+| --- | --- | --- |
+| `swapctx` is not found | PATH environment variable does not include SwapCtx installation folder. | Add installation directory (e.g., `%LOCALAPPDATA%\SwapCtx-0.1.0`) to your User Path in Windows environment variables, then restart terminal. |
+| Project not registered | Calling command outside a registered project directory. | Run `swapctx init` at project root. Nested projects maintain separate memory stores. Ensure consistent `--data-dir` if overriding store locations. |
+| Node/provider executable missing | Core memory needs no Node. Native adapters need Node.js 24+ and installed provider executables. | Verify Node.js 24+ (`node -v`) and provider installation. Use `--executable` or `--node` flags to specify explicit paths if required. |
+| Compatibility warning / plain UI fallback | Provider version/help probe did not pass context hook requirements. | Verify provider CLI supports required hook capability flags. Plain native session launches safely without context sharing. |
+| No callback recorded | Hooks untrusted, disabled, or skipped by provider. | Check provider configuration and diagnostic logs. Successful preflight output does not imply provider hook invocation. |
+| Context withheld | Incomplete requirement coverage, conflicting records, or secret detection triggered. | Run `swapctx context` locally to inspect reported coverage and exclusions. Address conflicting or invalid records explicitly. |
+| Database busy | Database locked by another active process writing to SQLite. | Close parallel writing tools and retry. Do not delete SQLite WAL/SHM sidecar files. |
+| Integrity error | Corrupted or unrecognized SQLite store format. | Preserve the store directory. Restore a verified backup into a new directory using `swapctx --data-dir '...' restore <backup.db>`. Do not run `init` as repair. |
+| Installer destination exists | Destination folder already exists during install. | Specify a new, non-existent destination directory for `install-windows.ps1`. |
+
+---
+
+Persistent PATH changes, provider trust decisions, and live-provider debugging are user-controlled actions. Routine project verification uses offline fixtures only.
