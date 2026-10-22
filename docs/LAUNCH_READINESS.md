@@ -16,6 +16,7 @@ validation, duplicate-member refusal and consistent memory-audit snapshots.
 
 The next candidate adds exact duplicate-memory diagnostics, a narrowly scoped
 synthetic-value scanner configuration, a full-history CI scan, community conduct,
+optional seven-day candidate retention in the private manual Windows workflow,
 this decision record, [release-note draft](RELEASE_NOTES_0.1.0.md) and
 [roadmap](ROADMAP.md). Final PR/CI outcomes are authoritative; a local pass does
 not establish a hosted Windows pass.

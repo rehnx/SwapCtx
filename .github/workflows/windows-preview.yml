@@ -1,6 +1,11 @@
 name: Windows preview preparation (manual, no publication)
 on:
   workflow_dispatch:
+    inputs:
+      retain_candidate:
+        description: Retain the tested candidate for 7 days inside this private repository
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -20,7 +25,6 @@ jobs:
           elseif (Test-Path SwapCtx/Cargo.toml) { 'CRATE_DIR=SwapCtx' >> $env:GITHUB_ENV }
           else { throw 'Cannot locate Cargo.toml' }
       # Network provisioning is separate from the offline checks below.
-      # This workflow is prepared locally; it has not been dispatched here.
       - name: Provision pinned toolchain and dependency cache
         working-directory: ${{ env.CRATE_DIR }}
         run: |
@@ -40,4 +44,18 @@ jobs:
           Get-Content .build/hosted-preview/SHA256SUMS.txt
           Get-Content .build/hosted-preview/windows-acceptance.json
           Get-Content .build/hosted-preview/release-checks.json
-      # No upload, release, package submission, commit or push step.
+      - name: Stage candidate for private maintainer review
+        if: ${{ inputs.retain_candidate }}
+        working-directory: ${{ env.CRATE_DIR }}
+        run: |
+          if ('${{ github.event.repository.private }}' -ne 'true') { throw 'Candidate retention requires a private repository; public distribution is not authorized by this workflow' }
+          Copy-Item -Recurse .build/hosted-preview "$env:RUNNER_TEMP/swapctx-preview"
+      - name: Retain verified candidate privately
+        if: ${{ inputs.retain_candidate && github.event.repository.private }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: swapctx-windows-preview-${{ github.sha }}
+          path: ${{ runner.temp }}/swapctx-preview/
+          retention-days: 7
+          if-no-files-found: error
+      # No release, package submission, commit, push or default upload step.
