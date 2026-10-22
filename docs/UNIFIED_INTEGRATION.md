@@ -91,7 +91,7 @@ build and **97 Rust tests in each of debug and release**, with one existing
 performance test ignored per profile. Supplemental checks passed: schema 10,
 context 23, session 23, everyday 28, native 34, pilot evaluator 12 and soak
 evaluator 11 (**141 checks**). Native additionally reports **12 Windows-only
-skips**. Documentation checks passed for 16 files/63 local links; PowerShell
+skips**. Documentation checks passed for 16 files/64 local links; PowerShell
 syntax was explicitly not run on Linux. Notices matched 57 Windows packages.
 The current RustSec review found zero advisories or informational warnings in
 the lockfile (database commit `59ef7abf8ce56ea80fe7eba97ba3835449009fa4`).

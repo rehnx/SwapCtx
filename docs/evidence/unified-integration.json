@@ -45,7 +45,7 @@
     "check": "documentation",
     "ok": true,
     "files": 16,
-    "local_links": 63,
+    "local_links": 64,
     "fenced_blocks": 35,
     "powershell_syntax": "not_run_non_windows",
     "readme_core_commands_executed": 4,
@@ -467,5 +467,6 @@
     "Plaintext storage; self-reported provenance; heuristic secret filtering.",
     "Unsigned snapshot fingerprints; no atomic filesystem snapshot or race-free enforcement.",
     "No independent clean-machine acceptance or publisher signing decision."
-  ]
+  ],
+  "documentation_final_log_sha256": "83f95a134a5cb621dc2fa810e4da5d56fa500d4b1a1af98097f607b47250fe07"
 }

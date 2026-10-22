@@ -220,7 +220,7 @@ See [security boundaries and reporting](SECURITY.md) before sharing sensitive da
 | Workflow | Requirements and evidence |
 | --- | --- |
 | Memory, search, context, policies, backup/recovery | Windows x64 portable CLI; core needs no Node, Rust or AI provider at runtime. |
-| Plain native launch | Separately installed provider. `native` and the menu require underlying `.exe` files on Windows; legacy `launch` also supports `.cmd`/`.bat` shims. |
+| Plain native launch | Separately installed provider: native `.exe` or a validated standard npm package entry. JS entries need Node; legacy `launch` also supports trusted `.cmd`/`.bat` shims. |
 | Native Codex context | Node.js 24+; recognizable Codex version and help advertising `--config` plus the modern hook-trust capability. No minimum compatible release or exact certified version established. Trust is never bypassed. |
 | Native Claude context | Node.js 24+; probe admits major 2 from 2.1.296 with `--plugin-dir`. This admission floor is not a verified supported-version range. |
 | Managed Codex console | Separate existing app-server workflow pinned to Codex CLI 0.162.1 and Node.js 24+; [setup and evidence](docs/PHASE5_EVERYDAY_CODEX.md). |

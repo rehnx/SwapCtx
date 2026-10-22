@@ -58,8 +58,11 @@ Only the `--context` forms opt into lifecycle sharing. Both keep the original
 provider UI. The interactive menu asks separately; the default answer is No.
 Legacy `swapctx launch codex`/`claude` perform plain native handoff only.
 Install/authenticate providers separately. Native executable discovery excludes
-the current directory; Windows `native` needs the underlying `.exe`, not a shell
-shim. Use `--executable ABSOLUTE_PATH` and, for context, `--node ABSOLUTE_PATH` if needed.
+the current directory. Windows `native` accepts native `.exe` files or validated
+standard npm package entries; it never interprets the shell shim. JS entries need
+Node. Use `--executable ABSOLUTE_PATH` and `--node ABSOLUTE_PATH` if needed; context
+and health checks require Node 24+. See the [native setup guide](PHASE8_NATIVE_PROVIDERS.md)
+for supported installation layouts.
 
 `context` reports coverage and exclusions in versioned JSON. Read-only selection
 omits stale/conflicting/invalid/secret-like/unknown-origin records by default;
