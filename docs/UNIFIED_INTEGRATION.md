@@ -109,6 +109,17 @@ the deterministic offline gate, fresh static-CRT comparison, packaging and
 recipient acceptance. It prints evidence but uploads no distribution. CI outcomes
 must be taken from the linked run, not inferred from workflow configuration.
 
+### Hosted Windows regression found
+
+Initial PR run [39756440255](https://github.com/rehnx/SwapCtx/actions/runs/39756440255)
+passed Windows formatting, Clippy, debug/release Rust tests, documentation syntax,
+all 46 native fixtures and notice validation. Packaging then failed solely because
+its fixture still asserted 49 dependency packages after the intelligence branch
+added SHA-256 dependencies. The produced inventory correctly contained 57; the
+other 18 packaging tests passed. The fixture now compares the entire packaged
+inventory against the reviewed source inventory instead of a stale package count.
+Hosted verification must rerun this assertion before packaging is cleared.
+
 ## Release boundaries and continuation
 
 This Linux environment cannot execute the authoritative Windows PowerShell gate,

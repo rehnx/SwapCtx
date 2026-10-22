@@ -449,7 +449,7 @@
     "tests/memory_audit.rs"
   ],
   "hosted_ci": {
-    "status_at_recording": "running_on_prior_checkpoint; final revision scheduled by push",
+    "status_at_recording": "Windows stale package-count fixture repaired; rerun pending",
     "authority": "https://github.com/rehnx/SwapCtx/pull/4/checks",
     "windows_local_execution": "unavailable_linux_executor"
   },
@@ -468,5 +468,20 @@
     "Unsigned snapshot fingerprints; no atomic filesystem snapshot or race-free enforcement.",
     "No independent clean-machine acceptance or publisher signing decision."
   ],
-  "documentation_final_log_sha256": "83f95a134a5cb621dc2fa810e4da5d56fa500d4b1a1af98097f607b47250fe07"
+  "documentation_final_log_sha256": "83f95a134a5cb621dc2fa810e4da5d56fa500d4b1a1af98097f607b47250fe07",
+  "windows_ci_observations": {
+    "run_url": "https://github.com/rehnx/SwapCtx/actions/runs/39756440255",
+    "job_id": 119749507176,
+    "checkpoint_commit": "b94e72738fb39e146ff17805228573bc3a009730",
+    "native": {
+      "passed": 46,
+      "skipped": 0
+    },
+    "package": {
+      "passed": 18,
+      "failed": 1,
+      "cause": "Stale fixture hard-coded 49 packages; regenerated inventory contains 57. Fixed to compare exact reviewed inventory; rerun pending."
+    },
+    "preview": "skipped_after_matrix_failure"
+  }
 }
