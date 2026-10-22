@@ -27,6 +27,22 @@ vulnerability reporting**, then checks **Security → Report a vulnerability**
 from a non-maintainer account. Record the verified route/date in #5 without
 vulnerability details. Keep this gate open until private intake is usable.
 
+## Mainline protection
+
+The consolidation audit found `main` reported as unprotected and no repository
+rulesets. The administration endpoint returned 403, so enforcement could not be
+configured or independently established with this connector. Before public
+launch, an administrator must open **Settings → Rules →
+Rulesets** (or **Branches → Add branch protection rule**) and target `main`:
+require pull requests and the six Foundation checks `secret-history`,
+`advisories`, `test (ubuntu-latest)`, `test (windows-latest)`, `windows-preview`,
+and `windows-recipient`; require an up-to-date branch; block force pushes and
+deletion. Require review by another maintainer when a reviewer is available.
+Apply enforcement to administrators and avoid bypass actors. Verify a failing
+check prevents an ordinary merge. If private-repository rules require a paid
+plan, do not purchase it implicitly; retain the manual exact-head merge gate
+and record the limitation until the owner chooses a supported configuration.
+
 ## Independent Windows acceptance (#6)
 
 Use a separate Windows x64 machine or clean VM with Windows PowerShell 5.1,
