@@ -2,6 +2,7 @@
 /Cargo.lock text eol=lf
 /THIRD_PARTY_NOTICES.txt text eol=lf
 /docs/third-party-inventory.json text eol=lf
+/docs/DEPENDENCIES.md text eol=lf
 # Embedded adapter bytes and release input hashes must survive checkout unchanged.
 /Cargo.toml text eol=lf
 /rust-toolchain.toml text eol=lf
