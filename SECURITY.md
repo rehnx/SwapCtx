@@ -7,12 +7,16 @@ Current review evidence is in [Phase 10](docs/PHASE10_PRODUCTION_HARDENING.md) a
 
 ## Reporting a vulnerability
 
-**A private reporting channel is a pending maintainer release decision.** This
-checkout cannot establish whether GitHub private vulnerability reporting is
-enabled. No private email address or response-time commitment is advertised.
-GitHub documents this reporting feature for public repositories; a private
-repository's 404 cannot establish its future state. The
-[owner checklist](docs/OWNER_LAUNCH_CHECKLIST.md) defines verified intake setup.
+GitHub Private Vulnerability Reporting is enabled for this repository.
+
+To report a security vulnerability privately:
+
+1. Open the [SwapCtx Security Advisories page](https://github.com/rehnx/SwapCtx/security/advisories).
+2. Select **Report a vulnerability**.
+3. Describe the issue, affected version, security impact, and reproduction steps using synthetic data.
+4. Submit the report privately to repository maintainers.
+
+Do not disclose security vulnerabilities, credentials, private memories, or sensitive logs in public GitHub issues.
 
 If the repository's **Security** tab offers **Report a vulnerability**, use that
 private GitHub form. Otherwise, request a private contact method from the
