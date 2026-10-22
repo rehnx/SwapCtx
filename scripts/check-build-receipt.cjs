@@ -80,3 +80,16 @@ test('release receipts require native tests and current helper hashes',()=> {
     assert.equal(fs.existsSync(output),false);
   }
 });
+test('receipt rejects pre-test mutation and missing native toolchain identity',()=> {
+  for(const [label,change,error] of [
+    ['mutation',info=>{info.build_observations[0].before='0'.repeat(64);},/Build hashes differ/],
+    ['native',info=>{delete info.native_toolchain;},/native toolchain identity/],
+    ['native-hash',info=>{info.native_toolchain.identity.artifacts[0].sha256='0'.repeat(64);},/native toolchain identity/],
+  ]) {
+    const info=JSON.parse(fs.readFileSync(receipt,'utf8'));change(info);
+    const changed=path.join(root,label+'.json');fs.writeFileSync(changed,JSON.stringify(info));
+    const output=path.join(root,label+' candidate'),result=pack(output,changed);
+    assert.notEqual(result.status,0);assert.match(result.stdout+result.stderr,error);
+    assert.equal(fs.existsSync(output),false);
+  }
+});

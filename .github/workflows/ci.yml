@@ -64,6 +64,8 @@ jobs:
       - name: JSON and bridge contracts
         working-directory: ${{ env.CRATE_DIR }}
         run: |
+          node scripts/check-build-verification.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Strict build verification checks failed' }
           node scripts/check-sql.cjs
           if ($LASTEXITCODE -ne 0) { throw 'SQL checks failed' }
           $taskExecutable = if ($IsWindows) { 'target/release/swapctx.exe' } else { 'target/release/swapctx' }

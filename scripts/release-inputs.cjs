@@ -18,6 +18,6 @@ function inputs(root) {
   return files.map(file=>({path:file,sha256:hash(fs.readFileSync(path.join(root,file)))}));
 }
 function tools(root) {
-  return ['build-windows.cjs','inspect-pe.cjs','release-inputs.cjs'].map(file=>({path:'scripts/'+file,sha256:hash(fs.readFileSync(path.join(root,'scripts',file)))}));
+  return ['build-windows.cjs','inspect-pe.cjs','release-inputs.cjs','windows-toolchain.cjs'].map(file=>({path:'scripts/'+file,sha256:hash(fs.readFileSync(path.join(root,'scripts',file)))}));
 }
 module.exports = {inputs,tools,hash};

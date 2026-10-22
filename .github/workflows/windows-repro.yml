@@ -1,0 +1,41 @@
+name: Windows reproducibility investigation (private evidence)
+on:
+  workflow_dispatch:
+  push:
+    branches: ['release/preview-trust']
+permissions:
+  contents: read
+jobs:
+  compare:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Provision pinned Rust and locked dependencies
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          if ($LASTEXITCODE -ne 0) { throw 'Rust provisioning failed' }
+          cargo fetch --locked --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency provisioning failed' }
+      - name: Compare two fresh offline builds and retain raw diagnostics
+        shell: pwsh
+        run: |
+          node scripts/build-windows.cjs "$env:RUNNER_TEMP/verified-build" --test --diagnostics "$env:RUNNER_TEMP/repro-evidence"
+          if ($LASTEXITCODE -ne 0) { throw 'Strict reproducibility gate failed' }
+      - name: Retain investigation evidence privately, including failures
+        if: ${{ always() && github.event.repository.private }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-repro-${{ matrix.os }}-${{ github.sha }}
+          path: ${{ runner.temp }}/repro-evidence/
+          if-no-files-found: warn
+          retention-days: 7
+      # Raw binaries are investigative inputs, never release candidates/public assets.

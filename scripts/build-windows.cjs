@@ -7,6 +7,7 @@ const crypto = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 const {inspect} = require('./inspect-pe.cjs');
 const {inputs:sourceInputs,tools} = require('./release-inputs.cjs');
+const {select:selectNativeToolchain}=require('./windows-toolchain.cjs');
 const root = path.resolve(__dirname,'..');
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 // Bounded diagnostics only. Equality still compares the complete file hashes.
@@ -31,7 +32,12 @@ function describeDifference(first,second) {
   }
   return {first:describeBinary(first),second:describeBinary(second),differingBytes,firstDifferenceRanges:ranges};
 }
-function build(destination, test = false) {
+function requireIdentical(hashes) {
+  if(!Array.isArray(hashes) || hashes.length<2 || hashes.some(value=>!/^[0-9a-f]{64}$/.test(value) || value!==hashes[0])) {
+    throw new Error('Build hashes differ or are incomplete; no candidate published');
+  }
+}
+function build(destination, test = false, diagnostics) {
   if (process.platform !== 'win32') throw new Error('Windows release builds require Windows');
   const output = path.resolve(destination), parent = path.dirname(output);
   if (!fs.statSync(parent).isDirectory() || fs.existsSync(output)) throw new Error('Choose a NEW destination with an existing parent');
@@ -46,14 +52,21 @@ function build(destination, test = false) {
   for (const key of ['CL','_CL_','LINK','RUSTC_WRAPPER','RUSTC_WORKSPACE_WRAPPER']) if (process.env[key]) throw new Error(`Unset build override ${key} for this release recipe`);
   const localCache = path.join(root,'.build/cargo-home');
   const cache = path.resolve(process.env.CARGO_HOME || (fs.existsSync(localCache) ? localCache : path.join(process.env.USERPROFILE,'.cargo')));
-  const env = {...process.env,PATH:rustBin+path.delimiter+process.env.PATH,CARGO_HOME:cache,CARGO_NET_OFFLINE:'true',CARGO_INCREMENTAL:'0',
+  const native=selectNativeToolchain();
+  console.log('Native toolchain identity: '+JSON.stringify(native.receipt));
+  if(diagnostics) {
+    diagnostics=path.resolve(diagnostics);
+    fs.mkdirSync(diagnostics); // Deliberately retained, explicit NEW destination only.
+    fs.writeFileSync(path.join(diagnostics,'native-toolchain.json'),JSON.stringify(native.receipt,null,2)+'\n');
+  }
+  const env = {...native.env,PATH:rustBin+path.delimiter+native.env.PATH,CARGO_HOME:cache,CARGO_NET_OFFLINE:'true',CARGO_INCREMENTAL:'0',
     RUSTC:path.join(rustBin,'rustc.exe'),RUSTDOC:path.join(rustBin,'rustdoc.exe'),SOURCE_DATE_EPOCH:'946684800',CFLAGS:'/Brepro'};
   delete env.RUSTFLAGS;
   const inputs = sourceInputs(root), buildTools = tools(root);
   const stage = fs.mkdtempSync(path.join(parent,'.swapctx-build-'));
   const stageIdentity = fs.lstatSync(stage);
   let work, workIdentity, failure;
-  const binaryHashes = [], binaries = [];
+  const binaryHashes = [], binaries = [], observations=[];
   function run(args, cwd, buildEnv = env) {
     console.log('cargo '+args.join(' '));
     const result = spawnSync(path.join(rustBin,'cargo.exe'),args,{cwd,env:buildEnv,stdio:'inherit'});
@@ -88,12 +101,17 @@ function build(destination, test = false) {
       run(['build',...common],source,buildEnv);
       const binary = path.join(target,'x86_64-pc-windows-msvc/release/swapctx.exe');
       const beforeTests=fs.readFileSync(binary);
+      if(diagnostics) fs.writeFileSync(path.join(diagnostics,`build-${name}.before.exe`),beforeTests);
       console.log(`Build ${name} before native tests: ${hash(beforeTests)}`);
       if (test && name === 'a') run(['test',...common,'--all-targets'],source,buildEnv);
       const afterTests=fs.readFileSync(binary);
+      if(diagnostics) fs.writeFileSync(path.join(diagnostics,`build-${name}.after.exe`),afterTests);
+      observations.push({build:name,before:hash(beforeTests),after:hash(afterTests)});
+      if(diagnostics) fs.writeFileSync(path.join(diagnostics,'observations.json'),JSON.stringify(observations,null,2)+'\n');
       console.log(`Build ${name} after native tests: ${hash(afterTests)}`);
       if(hash(beforeTests)!==hash(afterTests)) {
         console.error('Native test build changed the production executable: '+JSON.stringify(describeDifference(beforeTests,afterTests)));
+        requireIdentical([hash(beforeTests),hash(afterTests)]);
       }
       binaries.push(binary);binaryHashes.push(hash(fs.readFileSync(binary)));
     }
@@ -108,12 +126,15 @@ function build(destination, test = false) {
     fs.copyFileSync(binaries[0],path.join(payload,'swapctx.exe'));
     const compiler = spawnSync(env.RUSTC,['-vV'],{encoding:'utf8'});
     if (compiler.status !== 0) throw new Error('Cannot record compiler identity');
+    requireIdentical(observations.flatMap(value=>[value.before,value.after]));
     const receipt = {format_version:1,target:'x86_64-pc-windows-msvc',compiler:compiler.stdout.trim().split(/\r?\n/),
       recipe:'static-crt-brepro-v1',recipe_sha256:hash(fs.readFileSync(__filename)),tools:buildTools,inputs,
       source_fingerprint:hash(Buffer.from(JSON.stringify(inputs))),binary_sha256:binaryHashes[0],
-      independent_binary_hashes:binaryHashes,reproducible_on_this_toolchain:true,native_release_tests_run:test,pe,
+      independent_binary_hashes:binaryHashes,build_observations:observations,native_toolchain:native.receipt,
+      reproducible_on_this_toolchain:true,native_release_tests_run:test,pe,
       limits:['Local unsigned build receipt, not authenticated provenance','Same machine, compiler, cached dependencies and native toolchain; cross-machine reproducibility unverified','PE import inspection does not prove clean-machine compatibility']};
     fs.writeFileSync(path.join(payload,'build-info.json'),JSON.stringify(receipt,null,2)+'\n');
+    if(diagnostics) fs.writeFileSync(path.join(diagnostics,'build-info.json'),JSON.stringify(receipt,null,2)+'\n');
     fs.renameSync(payload,output);
     console.log(`Verified matching offline builds: ${binaryHashes[0]}\nOutput: ${output}`);
     return receipt;
@@ -141,7 +162,14 @@ function build(destination, test = false) {
   }
 }
 if (require.main === module) {
-  if (!process.argv[2] || process.argv.slice(3).some(arg=>arg!=='--test')) throw new Error('Usage: node scripts/build-windows.cjs NEW_OUTPUT_DIRECTORY [--test]');
-  build(process.argv[2],process.argv.includes('--test'));
+  const args=process.argv.slice(3);let test=false,diagnostics;
+  while(args.length) {
+    const arg=args.shift();
+    if(arg==='--test' && !test) test=true;
+    else if(arg==='--diagnostics' && !diagnostics && args[0] && !args[0].startsWith('--')) diagnostics=args.shift();
+    else throw new Error('Usage: node scripts/build-windows.cjs NEW_OUTPUT_DIRECTORY [--test] [--diagnostics NEW_DIRECTORY]');
+  }
+  if(!process.argv[2]) throw new Error('A new output directory is required');
+  build(process.argv[2],test,diagnostics);
 }
-module.exports = {build,describeBinary,describeDifference};
+module.exports = {build,describeBinary,describeDifference,requireIdentical};
