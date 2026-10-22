@@ -1,6 +1,6 @@
 [package]
 name = "swapctx"
-version = "0.1.0"
+version = "0.1.0-preview"
 edition = "2021"
 description = "Local-first context records and project protection rules for coding agents"
 license = "Apache-2.0"

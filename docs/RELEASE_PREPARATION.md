@@ -58,6 +58,21 @@ reports bounded PE section hashes and difference offsets before cleanup; it keep
 the complete-file equality gate and publishes no candidate. No binary fields are
 ignored or rewritten to force a match.
 
+The recipe explicitly selects x64 MSVC and a complete Windows SDK, sets absolute
+compiler/archiver/linker paths, and records versions, tool hashes and key runtime
+library hashes. `SWAPCTX_MSVC_VERSION` and `SWAPCTX_WINDOWS_SDK_VERSION` can select
+installed exact versions; unavailable versions fail closed. Rust is separately
+pinned. These unsigned observations do not inventory all SDK headers or
+authenticate the host. Hosted-image differences are inputs, not proof that a
+mismatch is harmless.
+
+For investigation, run `node scripts/build-windows.cjs NEW_BUILD --test --diagnostics NEW_EVIDENCE`.
+This retains raw pre/post executables and hash/toolchain observations in a new
+directory, including failures. Unmatched binaries are investigation inputs, never
+release assets. The private-only investigation workflow exercises Windows 2022 and
+the current hosted image with seven-day evidence retention. A pre/post mutation
+now fails immediately even if later independent outputs happen to match.
+
 This starts no real providers and performs no inference, downloads, uploads,
 publication, persistent PATH changes or access to existing user memory. Offline
 pilot-oracle fixtures are evaluator unit checks, not model evaluations. Existing

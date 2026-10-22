@@ -46,6 +46,7 @@ not establish a hosted Windows pass.
 | [Private reporting and publisher trust](https://github.com/rehnx/SwapCtx/issues/5) | Confirm a usable private intake; decide signing or explicitly unsigned preview and trusted hash delivery. |
 | [Independent Windows acceptance](https://github.com/rehnx/SwapCtx/issues/6) | Test the final exact candidate on an independent machine; retain source, receipts and all asset hashes. |
 | [Native compatibility](https://github.com/rehnx/SwapCtx/issues/7) | Separate authorization and exact-provider evaluation, or retain explicit experimental/unverified support language. |
+| [Windows reproducibility](https://github.com/rehnx/SwapCtx/issues/13) | Preserve raw differences; identify native compiler/linker/SDK and verify final same-toolchain builds. Cross-machine byte equality is not claimed. |
 | Final source and assets | All hosted checks, a fresh static-CRT producer and recipient tests for the accepted revision; preserve that exact package. |
 | Founder launch authorization | Approve visibility, publication and external distribution only after reviewing the completed evidence. |
 
@@ -64,6 +65,10 @@ private intake from these responses.
 3. Complete independent Windows recipient acceptance and the private-intake/trust
    decisions. Keep native support claims limited to evidence actually obtained.
 4. Replace pending identity fields in the release-note draft. Proposed version and
-   tag are `0.1.0` / `v0.1.0`; no tag is created by this document.
+   tag are `0.1.0-preview` / `v0.1.0-preview`; no tag is created by this document.
 5. Present source, assets, hashes and limits for founder approval. Only then change
    visibility, publish the release or distribute assets externally as approved.
+
+## Founder handoff
+
+Follow the [owner launch checklist](OWNER_LAUNCH_CHECKLIST.md) for private security intake, exact independent Windows acceptance, and the approval boundary. Native Codex/Claude compatibility remains experimental; live verification is not part of this preview gate.

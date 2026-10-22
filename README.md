@@ -118,14 +118,14 @@ channel. Checksums alone do not authenticate the publisher. From its directory:
 
 ```powershell
 Get-FileHash .\install-windows.ps1 -Algorithm SHA256
-Get-FileHash .\swapctx-0.1.0-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\swapctx-0.1.0-preview-windows-x64.zip -Algorithm SHA256
 $ExpectedZipSha256 = Read-Host 'Paste the trusted 64-digit ZIP SHA-256'
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-windows.ps1 `
-  -Archive .\swapctx-0.1.0-windows-x64.zip -ExpectedSha256 $ExpectedZipSha256 `
-  -Destination "$env:LOCALAPPDATA\SwapCtx-0.1.0"
+  -Archive .\swapctx-0.1.0-preview-windows-x64.zip -ExpectedSha256 $ExpectedZipSha256 `
+  -Destination "$env:LOCALAPPDATA\SwapCtx-0.1.0-preview"
 
 # Enable the command in this terminal session.
-$env:PATH = "$env:LOCALAPPDATA\SwapCtx-0.1.0;$env:PATH"
+$env:PATH = "$env:LOCALAPPDATA\SwapCtx-0.1.0-preview;$env:PATH"
 Get-Command swapctx -CommandType Application
 swapctx --version
 ```

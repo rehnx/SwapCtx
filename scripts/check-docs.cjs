@@ -7,7 +7,7 @@ const assert=require('node:assert/strict');
 const {spawnSync}=require('node:child_process');
 const root=path.resolve(__dirname,'..');
 const binary=path.resolve(process.argv[2]||path.join(root,'target/release/swapctx.exe'));
-const files=['CODE_OF_CONDUCT.md','docs/LAUNCH_READINESS.md','docs/ROADMAP.md','docs/RELEASE_NOTES_0.1.0.md','docs/INTELLIGENCE_WORKFLOWS.md','docs/UNIFIED_INTEGRATION.md','AGENTS.md','docs/MEMORY_QUALITY.md','README.md','CONTRIBUTING.md','SECURITY.md','SUPPORT.md','CHANGELOG.md',
+const files=['docs/OWNER_LAUNCH_CHECKLIST.md','CODE_OF_CONDUCT.md','docs/LAUNCH_READINESS.md','docs/ROADMAP.md','docs/RELEASE_NOTES_0.1.0.md','docs/INTELLIGENCE_WORKFLOWS.md','docs/UNIFIED_INTEGRATION.md','AGENTS.md','docs/MEMORY_QUALITY.md','README.md','CONTRIBUTING.md','SECURITY.md','SUPPORT.md','CHANGELOG.md',
   'docs/USAGE.md','docs/RELEASE_PREPARATION.md','docs/PHASE11_RELEASE_READINESS.md',
   'docs/WINDOWS_RELEASE.md','.github/ISSUE_TEMPLATE/bug_report.md',
   '.github/ISSUE_TEMPLATE/feature_request.md','.github/pull_request_template.md'];

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.0-preview — unpublished
+
+- Freeze new features for the first Windows prerelease; keep native provider
+  receipt/adherence explicitly experimental and unverified.
+- Strengthen full-binary verification to fail immediately on pre/post-test
+  mutation; record selected MSVC/SDK identities and retain private raw mismatch
+  evidence for Windows-environment investigations.
+- Prepare owner security-intake, unsigned trust and independent acceptance
+  instructions. Public release and visibility require separate founder approval.
+
 This file tracks user-facing changes. Entries below are **unreleased**; the
 `0.1.0` Cargo version does not establish a published release or tag.
 

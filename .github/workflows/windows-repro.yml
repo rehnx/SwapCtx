@@ -3,8 +3,12 @@ on:
   workflow_dispatch:
   push:
     branches: ['release/preview-trust']
+    paths: ['scripts/build-windows.cjs', 'scripts/windows-toolchain.cjs', 'Cargo.toml', 'Cargo.lock', '.github/workflows/windows-repro.yml']
 permissions:
   contents: read
+concurrency:
+  group: windows-repro-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   compare:
     strategy:
