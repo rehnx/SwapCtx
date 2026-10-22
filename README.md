@@ -20,7 +20,7 @@ you want to keep, retrieve a scoped context packet, and optionally make it
 available through native provider lifecycle hooks. It provides **external
 memory**, not a larger model context window or guaranteed instruction adherence.
 
-> **Preview Status & Verification Scope:** Local offline memory storage, CLI context retrieval, transactional database safety, and adapter hook outputs are verified deterministically with fake providers and synthetic events. Actual receipt by live native AI agents and model adherence remain unverified experimental integrations. The build badge links to CI workflow runs and is not local test evidence.
+> **Preview preparation — public release not yet approved:** Local offline memory storage, CLI context retrieval, transactional database safety, and adapter hook outputs are verified deterministically with fake providers and synthetic events. Actual receipt by live native AI agents and model adherence remain unverified experimental integrations. The build badge links to CI workflow runs and is not local test evidence.
 
 ---
 
@@ -275,6 +275,7 @@ There is no automatic conversation capture.
 - **Installation & Operations**: [Windows installation](docs/WINDOWS_RELEASE.md) · [CLI usage & recovery](docs/USAGE.md) · [Release preparation](docs/RELEASE_PREPARATION.md)
 - **Integrations**: [Native provider setup](docs/PHASE8_NATIVE_PROVIDERS.md) · [Managed Codex console](docs/PHASE5_EVERYDAY_CODEX.md)
 - **Protocols & Quality**: [Context protocol](docs/CONTEXT_PROTOCOL.md) · [Continuity contract](docs/PHASE9_CONTEXT_CONTINUITY.md) · [Memory quality](docs/MEMORY_QUALITY.md)
+- **Launch decision**: [Current readiness and gates](docs/LAUNCH_READINESS.md) · [Release-note draft](docs/RELEASE_NOTES_0.1.0.md)
 - **Security & Readiness**: [Security hardening](docs/PHASE10_PRODUCTION_HARDENING.md) · [Release readiness report](docs/PHASE11_RELEASE_READINESS.md) · [Local evidence](docs/evidence/phase11-release-preparation.json)
 
 ---
