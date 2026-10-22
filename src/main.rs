@@ -3,7 +3,11 @@ mod backup;
 mod codex;
 mod context;
 mod display;
+mod explain;
+mod handoff;
 mod history;
+mod inspect;
+mod intent;
 mod memory;
 mod native;
 mod paths;
@@ -12,6 +16,7 @@ mod provider;
 mod sensitive;
 mod storage;
 mod transfer;
+mod verify;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -70,6 +75,31 @@ enum Command {
     Memory {
         #[command(subcommand)]
         action: memory::Action,
+    },
+    /// Authoritative project intent and architectural invariants.
+    Intent {
+        #[command(subcommand)]
+        action: intent::Action,
+    },
+    /// Inspect concurrent agent worktree changes against boundary policies.
+    Inspect {
+        #[command(flatten)]
+        options: inspect::Options,
+    },
+    /// Investigate context delivery decisions, candidate ranking and omissions.
+    Explain {
+        #[command(flatten)]
+        options: explain::Options,
+    },
+    /// Transfer approved knowledge and intent safely between agents.
+    Handoff {
+        #[command(subcommand)]
+        action: handoff::Action,
+    },
+    /// Independently verify boundary rules, context completeness and constraints.
+    Verify {
+        #[command(flatten)]
+        options: verify::Options,
     },
     Privacy,
     /// Report implemented capabilities without opening the database.
@@ -231,6 +261,8 @@ fn run(cli: Cli) -> Result<u8> {
         || match &command {
             Command::Protect { action } => action.writable(),
             Command::Memory { action } => action.writable(),
+            Command::Intent { action } => action.writable(),
+            Command::Handoff { action } => action.writable(),
             Command::Import { apply, .. } => *apply,
             _ => false,
         };
@@ -317,6 +349,11 @@ fn run(cli: Cli) -> Result<u8> {
         }
         Command::Protect { action } => return protect::run(&mut conn, id, &cwd, &root, action),
         Command::Memory { action } => memory::run(&mut conn, id, action)?,
+        Command::Intent { action } => intent::run(&mut conn, id, action)?,
+        Command::Inspect { options } => return inspect::run(&conn, id, &root, options),
+        Command::Explain { options } => return explain::run(&mut conn, id, &cwd, &root, options),
+        Command::Handoff { action } => handoff::run(&mut conn, id, &root, action)?,
+        Command::Verify { options } => return verify::run(&mut conn, id, &cwd, &root, options),
         Command::Export { destination } => transfer::export(&mut conn, id, &destination)?,
         Command::Import {
             source,
