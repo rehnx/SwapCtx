@@ -195,6 +195,20 @@ test('installer rejects tampered payload even with a matching new archive hash',
   assert.equal(fs.existsSync(output),false);
   assert.equal(fs.readdirSync(root).some(name => name.startsWith('.swapctx-install-')),false);
 });
+test('installer rejects malformed prerelease versions and version type confusion',()=> {
+  for(const [label,version] of [
+    ['path-version','0.1.0-preview/../outside'],['newline-version','0.1.0-preview\n'],
+    ['array-version',['0.1.0-preview']],['empty-prerelease','0.1.0-'],
+  ]) {
+    const archive=modifiedArchive(label,dir=> {
+      const file=path.join(dir,'manifest.json'),manifest=JSON.parse(fs.readFileSync(file,'utf8'));
+      manifest.version=version;fs.writeFileSync(file,JSON.stringify(manifest));
+    });
+    const output=path.join(root,label+' install'),result=install(archive,output);
+    assert.notEqual(result.status,0);assert.match(result.stdout+result.stderr,/Unsupported package manifest/);
+    assert.equal(fs.existsSync(output),false);
+  }
+});
 test('installer refuses unknown entries and duplicate manifest paths', () => {
   const extra = modifiedArchive('extra',dir => fs.writeFileSync(path.join(dir,'extra.ps1'),'never execute'));
   const first = path.join(root,'extra install');
