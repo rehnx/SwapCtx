@@ -85,7 +85,17 @@ function generate(metadata) {
     inventory.packages.push(entry);
   }
   inventory.notices_sha256 = digest(Buffer.from(text));
-  return {text, inventory:JSON.stringify(inventory,null,2)+'\n'};
+  const guide = '# Native Windows dependency inventory\n\n'
+    + `Generated offline from locked Cargo metadata filtered for ${target}. `
+    + `These ${inventory.packages.length} third-party packages include build/dev dependencies. `
+    + 'Licenses are package declarations; this is not legal clearance, a vulnerability audit, '
+    + 'or a complete all-platform SBOM. Cargo.lock is the authoritative version inventory.\n\n'
+    + 'Generated with the notices and machine-readable inventory by '
+    + '`node scripts/third-party.cjs --write`; `--check` verifies all three files. '
+    + 'Rust/MSVC runtime components and separately installed tools are outside this crate inventory.\n\n'
+    + '| Package | Version | Declared license |\n|---|---|---|\n'
+    + inventory.packages.map(pkg => `| ${pkg.name} | ${pkg.version} | ${pkg.license} |\n`).join('');
+  return {text, guide, inventory:JSON.stringify(inventory,null,2)+'\n'};
 }
 if (require.main === module) {
   const mode = process.argv[2];
@@ -93,7 +103,7 @@ if (require.main === module) {
   const result = spawnSync('cargo',['metadata','--offline','--locked','--format-version','1','--filter-platform',target],{cwd:root,encoding:'utf8',maxBuffer:8*1024*1024});
   if (result.error || result.status !== 0) throw new Error(`Offline cargo metadata failed: ${result.error || result.stderr}`);
   const generated = generate(JSON.parse(result.stdout));
-  for (const [file,bytes] of [['THIRD_PARTY_NOTICES.txt',generated.text],['docs/third-party-inventory.json',generated.inventory]]) {
+  for (const [file,bytes] of [['THIRD_PARTY_NOTICES.txt',generated.text],['docs/third-party-inventory.json',generated.inventory],['docs/DEPENDENCIES.md',generated.guide]]) {
     const dest = path.join(root,file);
     if (mode === '--write') fs.writeFileSync(dest,bytes);
     else if (!fs.readFileSync(dest).equals(Buffer.from(bytes))) throw new Error(`${file} is stale; regenerate and review`);
