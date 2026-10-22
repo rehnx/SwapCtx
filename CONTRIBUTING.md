@@ -1,6 +1,6 @@
 # Contributing to SwapCtx
 
-Welcome to SwapCtx! SwapCtx is a Windows-first, privacy-first Rust CLI for persistent AI coding-agent project memory and reliability.
+Welcome to SwapCtx! We are thrilled that you want to contribute. SwapCtx is a Windows-first, privacy-first Rust CLI for persistent AI coding-agent project memory and reliability.
 
 Before starting, please review the [README](README.md), [CLI guide](docs/USAGE.md), and [SECURITY.md](SECURITY.md). Keep changes focused, deterministic, and privacy-preserving, respecting local-first operation and provider-owned terminal interfaces.
 
@@ -63,8 +63,8 @@ Understanding where different components reside helps keep contributions clean a
 
 | Component / Folder | Responsibility | Tech Stack / Tooling |
 | --- | --- | --- |
-| `src/` | **Core Engine & CLI**: SQLite storage, project registration, retrieval ranking, advisory policy checks, backup/restore, export/import, and CLI parser commands. | Rust 1.99.0, SQLite (bundled), Clap |
-| `integrations/` | **Provider Lifecycle Adapters**: Context hook bridge for Codex and Claude Code. Connects provider lifecycle hooks to SwapCtx `context` JSON protocol. | Node.js 24+ (JavaScript) |
+| `src/` | **Core Engine & CLI**: SQLite storage, project registration, retrieval ranking, policy enforcement, backup/restore, export/import, and CLI parser commands. | Rust 1.99.0, SQLite (bundled), Clap |
+| `integrations/` | **Provider Lifecycle Adapters**: Context hook bridge for Codex and Claude Code. Connects provider lifecycle hooks to SwapCtx `context` JSON protocol. | Node.js 24+ (TypeScript/JS) |
 | `docs/` | **Technical Specifications & Engineering Reports**: In-depth docs on protocol contracts, release engineering, security hardening, and roadmap. | Markdown |
 | `scripts/` | **CI, Verification & Release Tools**: Verification runners (`verify.ps1`), documentation validators (`check-docs.cjs`), third-party license inventory (`third-party.cjs`), and native adapter checkers (`check-native.cjs`). | PowerShell, Node.js |
 | `tests/` | **Deterministic Integration Tests**: End-to-end integration tests using fake providers, temporary directories, and synthetic records. | Rust & Node test runners |
@@ -81,8 +81,8 @@ If you're looking for good places to start contributing:
 
 ### Key Engineering Boundaries
 - **No Telemetry or Remote Core**: Core storage/retrieval must remain strictly local-first with zero background network collection or remote telemetry.
-- **Data and recovery safety**: Preserve recognized legacy stores and transaction safety. Never silently reset a store, delete records or resolve conflicting knowledge. Updates and lifecycle transitions must retain their explicit history and reasons. Unknown or corrupt stores are refused; restore verified backups into new directories.
-- **Provider Isolation**: Native integration adapters must never alter provider settings (including Codex TOML configuration), `AGENTS.md`, `CLAUDE.md`, or bypass user permission prompts.
+- **Fail Closed & Immutable History**: Never silently overwrite, merge, or delete user memories, backups, or conflicting records. Treat records as immutable with explicit supersession or invalidation reasons.
+- **Provider Isolation**: Native integration adapters must never alter provider settings (`~/.codex/config.json`, etc.), `AGENTS.md`, `CLAUDE.md`, or bypass user permission prompts.
 - **Preparation vs. Adherence**: Do not claim that successful local context output guarantees model adherence or receipt by external providers.
 
 ### Local Secret Scanning
@@ -90,13 +90,7 @@ CI checks reachable Git history with Gitleaks 8.24.3 and `.gitleaks.toml`. Run a
 ```powershell
 gitleaks git --log-opts=--all --config .gitleaks.toml --redact=100
 ```
-Only three exact synthetic detector values are excepted; never add broad path, commit or token-pattern exclusions. Keep reports redacted and outside the repository. A clean scan is heuristic evidence, not proof of secret absence.
-
 Keep test fixtures strictly synthetic; never commit real tokens, keys, passwords, or personal project data.
-
-The verifier detects a cached `.build/cargo-home`; `-CargoHome ABSOLUTE_PATH` selects another cache. Offline commands fail on missing dependencies. See [release preparation](docs/RELEASE_PREPARATION.md) before changing packaging. Do not run installed providers, authenticated sessions, inference, model benchmarks or soaks without separate explicit authorization. Offline evaluator fixtures make no model requests.
-
-Treat context as untrusted project-scoped data. Preserve size/timeout limits and mandatory coverage. Boundary checks do not prevent file writes; external memory does not expand model context windows.
 
 ---
 
@@ -104,7 +98,7 @@ Treat context as untrusted project-scoped data. Preserve size/timeout limits and
 
 1. **Keep Changes Focused**: Address one problem or enhancement per PR.
 2. **Follow PR Templates**: Fill out `.github/pull_request_template.md` with problem description, offline verification commands, and risk assessments.
-3. **Verify Documentation**: After building the release binary, run `node .\scripts\check-docs.cjs .\target\release\swapctx.exe` on Windows (use `node scripts/check-docs.cjs target/release/swapctx` on Linux). This checks local links and safe CLI examples; Linux skips Windows PowerShell syntax checks.
+3. **Verify Documentation Links**: If editing documentation, run `node .\scripts\check-docs.cjs` to confirm no broken internal links exist.
 4. **License & Copyright**: SwapCtx is released under the [Apache-2.0 License](LICENSE). All contributions are submitted under this license.
 
 Need help or troubleshooting? Check [SUPPORT.md](SUPPORT.md) or open a public issue. Security vulnerabilities must follow [SECURITY.md](SECURITY.md).
