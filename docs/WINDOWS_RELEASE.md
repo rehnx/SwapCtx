@@ -11,7 +11,7 @@ which launch the installed provider's original UI. Bare `swapctx` opens a provid
 selector in an interactive terminal. Memory exposure is off by default. Optional
 `--context` requires Node.js 24+ and a provider advertising the required hook or
 plugin interface; older versions fall back to ordinary native launching. This
-adapter is offline-tested only, with native receipt/adherence unverified. See
+adapter is **EXPERIMENTAL**, offline-tested only, with native receipt/adherence unverified. See
 `docs/PHASE8_NATIVE_PROVIDERS.md` in the source repository for native setup and
 limitations. No provider is bundled or authenticated by SwapCtx.
 

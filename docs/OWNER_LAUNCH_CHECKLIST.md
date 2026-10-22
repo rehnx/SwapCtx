@@ -14,34 +14,27 @@ account/build environment; adjacent checksums are not publisher authentication.
 
 GitHub documents private vulnerability reporting for **public** repositories:
 [official instructions](https://docs.github.com/en/code-security/security-advisories/working-with-repository-security-advisories/configuring-private-vulnerability-reporting-for-a-repository).
-A 404 while private cannot verify its state; this execution token also receives
-403 for administrative settings. No reporting channel has been verified.
+The owner reports that the repository is public, private reporting is enabled,
+and the private report form was checked without submitting a report. The public
+[advisories page](https://github.com/rehnx/SwapCtx/security/advisories) exposes
+**Report a vulnerability**. PR #21 records the corrected reporting instructions.
+Keep any vulnerability details private; do not submit a fake vulnerability.
 
-Before public launch, supply a maintainer-controlled private contact route,
-verify receipt with a harmless message, and update SECURITY.md with that confirmed
-route. Do not invent an address or submit a fake vulnerability. If visibility and
-reporting setup must be coordinated, document a usable temporary intake first.
-After authorized visibility change, an administrator opens **Settings → Code
-security** (possibly grouped under Code security and analysis), enables **Private
-vulnerability reporting**, then checks **Security → Report a vulnerability**
-from a non-maintainer account. Record the verified route/date in #5 without
-vulnerability details. Keep this gate open until private intake is usable.
+The owner authorizes an unsigned preview with founder-controlled HTTPS hashes,
+provided the final-source CI, exact candidate and separate-host Windows gates
+pass. This conditional authorization does not turn an earlier candidate's
+results into evidence for a newer source revision.
 
 ## Mainline protection
 
-The consolidation audit found `main` reported as unprotected and no repository
-rulesets. The administration endpoint returned 403, so enforcement could not be
-configured or independently established with this connector. Before public
-launch, an administrator must open **Settings → Rules →
-Rulesets** (or **Branches → Add branch protection rule**) and target `main`:
-require pull requests and the six Foundation checks `secret-history`,
-`advisories`, `test (ubuntu-latest)`, `test (windows-latest)`, `windows-preview`,
-and `windows-recipient`; require an up-to-date branch; block force pushes and
-deletion. Require review by another maintainer when a reviewer is available.
-Apply enforcement to administrators and avoid bypass actors. Verify a failing
-check prevents an ordinary merge. If private-repository rules require a paid
-plan, do not purchase it implicitly; retain the manual exact-head merge gate
-and record the limitation until the owner chooses a supported configuration.
+The owner reports configured branch protection. Recheck the current settings and
+required checks through GitHub before merging: require pull requests, current-base
+checks, and the applicable Foundation jobs; block force pushes and deletion.
+A public push/PR intentionally skips `windows-recipient`; the final manual run on
+`main` must run that job successfully. An expected skip is not a failed check.
+If the only merge blocker is a solo owner's inability to approve their own PR,
+the owner authorizes reducing required approving reviews to zero while preserving
+all other protections. Do not bypass failed checks or broadly disable protection.
 
 ## Independent Windows acceptance (#6)
 
@@ -49,7 +42,7 @@ Use a separate Windows x64 machine or clean VM with Windows PowerShell 5.1,
 preferably without Rust, Node, MSVC or providers. Same-machine hosted acceptance
 with a restricted PATH does not establish independent-machine compatibility.
 No independent physical Windows host/credentials are attached to the cloud
-environment. Private CI additionally transfers the exact tested package from its
+environment. Private CI and an explicit public manual Foundation run on `main` transfer the exact tested package from its
 producer to a separate Windows 2022 runner and preserves that recipient report.
 When passed, this supplies independent hosted-VM/OS evidence. It does not prove
 behavior on a clean personal machine without developer tools installed.
@@ -89,11 +82,11 @@ Persistent user PATH setup remains a separate manual Windows check.
 
 - Select merged source with clean working tree and all Foundation jobs passed:
   Windows/Linux, advisories, history scan, fresh Windows producer and the separate
-  Windows recipient (private CI).
+  Windows recipient (private CI or public manual run on `main`).
 - Verify strict pre/post/independent-build hashes, static CRT, native release
   tests, package/receipt regressions and all recipient checks. Keep #13 scoped
   to actual native toolchain evidence; never normalize differences away.
-- Download the private artifact before seven-day expiry. Verify artifact digest,
+- Download the authorized Actions artifact before seven-day expiry. Verify artifact digest,
   original checksums, ZIP manifest and source/tool inventories. Archive original
   bytes/logs/receipts privately; receipts remain unsigned local observations.
 - Fill the release-note identity block with actual hashes and run URLs. Native
@@ -105,11 +98,12 @@ Persistent user PATH setup remains a separate manual Windows check.
 
 ## Founder authorization and subsequent launch actions
 
-After #5/#6/#13 have evidence or an explicitly reviewed bounded disposition,
-approve the exact source, hashes, unsigned disclosure and these actions:
+The owner authorizes these actions after #5/#6/#13 have final evidence or the
+explicitly accepted bounded disposition. Verify exact source, hashes and unsigned
+disclosures before publication:
 
-1. Change visibility to public. Review private history, branches, issues and PRs
-   first; secret scanning is heuristic. Verify private security intake.
+1. Verify the repository remains public and private security intake remains usable.
+   Review reachable history; secret scanning is heuristic.
 2. Create the approved tag and GitHub **prerelease** on that exact revision.
    Leave **Set as latest release** off. Attach unchanged approved assets,
    checksums/receipts and finalized release notes.

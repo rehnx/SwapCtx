@@ -1,8 +1,9 @@
 # Public preview decision record
 
 Prepared 2026-10-22. **Public-launch decision: NO-GO pending the gates below.**
-This is engineering preparation, not permission to change visibility, publish a
-release, create a public download or distribute a candidate externally.
+The owner subsequently authorized publication of an unsigned public prerelease
+after all final-source CI and exact-candidate acceptance gates pass. This document
+is not evidence that those gates have passed or that publication has occurred.
 
 ## Delivered engineering
 
@@ -43,14 +44,15 @@ not establish a hosted Windows pass.
 
 | Gate | Evidence still needed |
 | --- | --- |
-| [Private reporting and publisher trust](https://github.com/rehnx/SwapCtx/issues/5) | Confirm a usable private intake; decide signing or explicitly unsigned preview and trusted hash delivery. |
-| [Independent Windows acceptance](https://github.com/rehnx/SwapCtx/issues/6) | Final private CI includes a separate Windows 2022 recipient of the exact producer package. Preserve its report; clean personal-machine and persistent PATH checks remain manual. |
+| [Private reporting and publisher trust](https://github.com/rehnx/SwapCtx/issues/5) | Owner reports enabled/verified GitHub private reporting and accepts unsigned preview with trusted HTTPS hashes; verify current route and final scan results. |
+| [Independent Windows acceptance](https://github.com/rehnx/SwapCtx/issues/6) | Final private CI or a public manual Foundation run on main must pass a separate Windows 2022 recipient on the exact package. Preserve its report; final-candidate clean personal-machine scope remains outstanding. |
 | [Native compatibility](https://github.com/rehnx/SwapCtx/issues/7) | Separate authorization and exact-provider evaluation, or retain explicit experimental/unverified support language. |
 | [Windows reproducibility](https://github.com/rehnx/SwapCtx/issues/13) | Preserve raw differences; identify native compiler/linker/SDK and verify final same-toolchain builds. Cross-machine byte equality is not claimed. |
 | Final source and assets | All hosted checks, a fresh static-CRT producer and recipient tests for the accepted revision; preserve that exact package. |
-| Founder launch authorization | Approve visibility, publication and external distribution only after reviewing the completed evidence. |
+| Founder launch authorization | Owner authorizes publication and distribution conditionally on final gates; the repository is already public. |
 
-Execution credentials could read code, push branches, manage issues and start CI.
+During the earlier private-repository audit, execution credentials could read
+code, push branches, manage issues and start CI.
 Reading branch-protection and Actions-permission settings returned HTTP 403;
 private-vulnerability-reporting inspection returned 404, which does not establish
 its state. Repository description/topics updates also returned 403. No repository
@@ -66,8 +68,9 @@ private intake from these responses. The owner checklist accounts for GitHub pri
    decisions. Keep native support claims limited to evidence actually obtained.
 4. Replace pending identity fields in the release-note draft. Proposed version and
    tag are `0.1.0-preview` / `v0.1.0-preview`; no tag is created by this document.
-5. Present source, assets, hashes and limits for founder approval. Only then change
-   visibility, publish the release or distribute assets externally as approved.
+5. Verify all conditions of the owner's publication authorization against the final
+   source and assets, then publish the existing draft as a prerelease. Do not
+   publish while a mandatory gate remains unverified.
 
 ## Founder handoff
 

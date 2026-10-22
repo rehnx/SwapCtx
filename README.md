@@ -20,7 +20,7 @@ you want to keep, retrieve a scoped context packet, and optionally make it
 available through native provider lifecycle hooks. It provides **external
 memory**, not a larger model context window or guaranteed instruction adherence.
 
-> **Preview preparation — public release not yet approved:** Local offline memory storage, CLI context retrieval, transactional database safety, and adapter hook outputs are verified deterministically with fake providers and synthetic events. Actual receipt by live native AI agents and model adherence remain unverified experimental integrations. The build badge links to CI workflow runs and is not local test evidence.
+> **Windows preview preparation — final candidate verification pending:** Local offline memory storage, CLI context retrieval, transactional database safety, and adapter hook outputs are verified deterministically with fake providers and synthetic events. Actual receipt by live native AI agents and model adherence remain unverified experimental integrations. The build badge links to CI workflow runs and is not local test evidence.
 
 ---
 
@@ -261,7 +261,7 @@ Non-Windows release compatibility has not been established by local Windows test
 | Native provider receipt and adherence | Unverified with real native providers; no general recovery guarantee. |
 | Managed-console model use | A historical authenticated pilot passed its specific checks; it does not validate the newer native route or natural compaction recovery. |
 | Portable distribution | Local candidate preparation and acceptance; see the [current release assessment](docs/PHASE11_RELEASE_READINESS.md). |
-| Public release | Approval pending. Hosted acceptance, clean-machine evidence, advisory review and publisher identity remain release decisions. |
+| Public release | Owner authorizes an unsigned preview after final-source CI and separate-host Windows acceptance pass. Clean personal-machine evidence remains separate. |
 
 Current integration evidence and remaining release work are recorded in the
 [unified integration report](docs/UNIFIED_INTEGRATION.md). Release review,

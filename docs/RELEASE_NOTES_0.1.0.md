@@ -53,7 +53,7 @@ they do not authenticate a publisher. No WinGet or Scoop package is submitted.
 Memory, backups and handoffs are plaintext. Secret detection is heuristic; provenance
 is self-reported. Context preparation and callback output do not establish provider
 receipt or model adherence. Native providers are tested with synthetic fixtures;
-exact live compatibility remains unverified. Boundary rules are manual checks and
+exact live compatibility remains **EXPERIMENTAL and unverified**. Boundary rules are manual checks and
 do not prevent writes. State fingerprints are unsigned snapshots with filesystem
 race limitations. No telemetry or automatic transcript ingestion is introduced.
 Windows hosted fixtures do not establish independent-machine compatibility.
@@ -68,8 +68,8 @@ no Linux distribution or support guarantee is included in this Windows preview.
 - Final hosted checks and fresh Windows producer run: record the exact run URL.
 - Tested executable, ZIP and installer SHA-256: extract from that run's evidence.
 - Independent Windows recipient acceptance: pending.
-- Signing/unsigned-preview trust decision and verified private security intake: pending.
-- Founder authorization for visibility, publication and distribution: pending.
+- Unsigned-preview trust decision: accepted by the owner; private GitHub reporting is owner-verified and must remain usable.
+- Founder authorization: public prerelease and distribution authorized only after all final-source CI and candidate acceptance gates pass.
 
 See [launch readiness](LAUNCH_READINESS.md). Public-launch status remains NO-GO
 until the required evidence and authorizations are complete.
