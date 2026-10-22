@@ -51,6 +51,13 @@ cross-volume rename. Both temporary trees are cleaned with ownership checks;
 cleanup failures retain an originating build error. A short, trusted Windows TEMP
 location is still a build prerequisite if the account's TEMP itself is deeply nested.
 
+The compiler runs from canonical Windows paths. Source, Cargo-cache and generated
+output paths remap both ordinary/8.3 and device spellings to fixed virtual roots.
+The producer logs executable hashes before/after native tests. On a mismatch it
+reports bounded PE section hashes and difference offsets before cleanup; it keeps
+the complete-file equality gate and publishes no candidate. No binary fields are
+ignored or rewritten to force a match.
+
 This starts no real providers and performs no inference, downloads, uploads,
 publication, persistent PATH changes or access to existing user memory. Offline
 pilot-oracle fixtures are evaluator unit checks, not model evaluations. Existing
