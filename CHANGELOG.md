@@ -3,6 +3,18 @@
 This file tracks user-facing changes. Entries below are **unreleased**; the
 `0.1.0` Cargo version does not establish a published release or tag.
 
+## Unreleased — static build diagnostics
+
+- Canonicalize compiler paths and remap Windows aliases plus generated outputs;
+  report pre/post-test hashes and bounded PE differences when strict builds differ.
+  Preserve full-file equality and refusal to publish mismatching candidates.
+
+## Unreleased — stable handoff provenance
+
+- Preserve original source/actor labels across repeated handoffs, including
+  maximum-length UTF-8 labels. Record the target in import history instead of
+  growing the source label; retain unknown-provenance exclusions.
+
 ## Unreleased — memory quality and launch preparation
 
 - Add checksum-pinned reachable-history scanning, community/launch documentation

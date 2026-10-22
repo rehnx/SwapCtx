@@ -608,17 +608,17 @@ fn apply(conn: &mut Connection, project: i64, source: &Path, allow_sensitive: bo
         }
 
         if provenance {
-            let src_label = format!(
-                "handoff:{target}:{}",
-                orig_source.as_deref().unwrap_or("transfer")
-            );
+            // Transport is an event, not another prefix on the original label.
+            // Preserve unknown markers and keep repeated transfers exportable.
+            let fallback_source = format!("handoff:{target}");
+            let src_label = orig_source.as_deref().unwrap_or(&fallback_source);
             let actor_label = orig_actor.as_deref().unwrap_or("agent-handoff");
-            history::origin(&tx, new_id, &src_label, actor_label)?;
+            history::origin(&tx, new_id, src_label, actor_label)?;
             history::event(
                 &tx,
                 new_id,
                 "import",
-                "Imported from approved agent handoff bundle",
+                &format!("Imported from approved agent handoff bundle; target: {target}"),
             )?;
         }
 

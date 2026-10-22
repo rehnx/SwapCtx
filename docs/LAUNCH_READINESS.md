@@ -14,7 +14,7 @@ preserved. The first follow-up fix is source
 optional handoff IDs/counts, normalized intent matching, shared structural/field
 validation, duplicate-member refusal and consistent memory-audit snapshots.
 
-The next candidate adds exact duplicate-memory diagnostics, a narrowly scoped
+The current candidate adds bounded, repeatable handoff provenance, exact duplicate-memory diagnostics, a narrowly scoped
 synthetic-value scanner configuration, a full-history CI scan, community conduct,
 optional seven-day candidate retention in the private manual Windows workflow,
 this decision record, [release-note draft](RELEASE_NOTES_0.1.0.md) and
@@ -25,7 +25,7 @@ not establish a hosted Windows pass.
 
 - First fix: formatting, Clippy with warnings denied and 104 Rust tests passed in
   each debug/release profile; one existing opt-in performance test ignored.
-- Duplicate-diagnostic candidate: 110 Rust tests passed in each profile with the
+- Current memory/handoff candidate: 113 Rust tests passed in each profile with the
   same ignored performance test. Linux native fixtures explicitly skip 12 Windows
   cases. Windows packaging/PowerShell and fresh producer results must come from CI.
 - Locked Windows third-party inventory: 57 packages matched. Dependency advisory

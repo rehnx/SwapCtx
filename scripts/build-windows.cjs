@@ -9,6 +9,28 @@ const {inspect} = require('./inspect-pe.cjs');
 const {inputs:sourceInputs,tools} = require('./release-inputs.cjs');
 const root = path.resolve(__dirname,'..');
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
+// Bounded diagnostics only. Equality still compares the complete file hashes.
+function describeBinary(bytes) {
+  const pe = inspect(bytes), header = bytes.readUInt32LE(0x3c);
+  const optional = header+24, sections = [], table = optional+bytes.readUInt16LE(header+20);
+  for (let index=0; index<bytes.readUInt16LE(header+6); index++) {
+    const entry=table+index*40, size=bytes.readUInt32LE(entry+16), offset=bytes.readUInt32LE(entry+20);
+    if (offset+size>bytes.length) throw new Error('Invalid diagnostic section bounds');
+    sections.push({name:bytes.toString('ascii',entry,entry+8).replace(/\0/g,''),offset,bytes:size,
+      sha256:hash(bytes.subarray(offset,offset+size))});
+  }
+  return {sha256:hash(bytes),bytes:bytes.length,coff_timestamp:bytes.readUInt32LE(header+8),
+    checksum:bytes.readUInt32LE(optional+64),sections,pe};
+}
+function describeDifference(first,second) {
+  const ranges=[];let differingBytes=0,start;
+  for (let index=0;index<=Math.max(first.length,second.length);index++) {
+    const different=index<Math.max(first.length,second.length) && first[index]!==second[index];
+    if(different) {differingBytes++;if(start===undefined) start=index;}
+    else if(start!==undefined) {if(ranges.length<32) ranges.push({offset:start,bytes:index-start});start=undefined;}
+  }
+  return {first:describeBinary(first),second:describeBinary(second),differingBytes,firstDifferenceRanges:ranges};
+}
 function build(destination, test = false) {
   if (process.platform !== 'win32') throw new Error('Windows release builds require Windows');
   const output = path.resolve(destination), parent = path.dirname(output);
@@ -44,23 +66,42 @@ function build(destination, test = false) {
     work = fs.mkdtempSync(path.join(os.tmpdir(),'swapctx-compile-'));
     workIdentity = fs.lstatSync(work);
     for (const name of ['a','b']) {
-      const source = path.join(work,'source-'+name), target = path.join(work,'target-'+name);
-      fs.mkdirSync(source);
+      const sourceAlias = path.join(work,'source-'+name), targetAlias = path.join(work,'target-'+name);
+      fs.mkdirSync(sourceAlias);fs.mkdirSync(targetAlias);
+      // Cargo/rustc can resolve Windows 8.3 paths to their long spelling.
+      // Compile from canonical paths and remap both spellings, including OUT_DIR.
+      const source=fs.realpathSync.native(sourceAlias),target=fs.realpathSync.native(targetAlias);
       for (const input of inputs) {
         const bytes = fs.readFileSync(path.join(root,input.path));
         if (hash(bytes) !== input.sha256) throw new Error(`Source changed during build: ${input.path}`);
         const file = path.join(source,input.path);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,bytes);
       }
-      const flags = ['-Ctarget-feature=+crt-static','-Clink-arg=/Brepro','-Cdebuginfo=0',
-        `--remap-path-prefix=${source}=/swapctx`,`--remap-path-prefix=${cache}=/cargo`];
+      const flags = ['-Ctarget-feature=+crt-static','-Clink-arg=/Brepro','-Cdebuginfo=0'];
+      for(const [aliases,destination] of [
+        [[sourceAlias,source],'/swapctx'],[[cache,fs.realpathSync.native(cache)],'/cargo'],
+        [[targetAlias,target],'/target'],
+      ]) for(const prefix of new Set(aliases.flatMap(value=>[value,path.toNamespacedPath(value)]))) {
+        flags.push(`--remap-path-prefix=${prefix}=${destination}`);
+      }
       const buildEnv = {...env,CARGO_ENCODED_RUSTFLAGS:flags.join('\x1f')};
       const common = ['--offline','--locked','--release','--target','x86_64-pc-windows-msvc','--target-dir',target];
       run(['build',...common],source,buildEnv);
-      if (test && name === 'a') run(['test',...common,'--all-targets'],source,buildEnv);
       const binary = path.join(target,'x86_64-pc-windows-msvc/release/swapctx.exe');
+      const beforeTests=fs.readFileSync(binary);
+      console.log(`Build ${name} before native tests: ${hash(beforeTests)}`);
+      if (test && name === 'a') run(['test',...common,'--all-targets'],source,buildEnv);
+      const afterTests=fs.readFileSync(binary);
+      console.log(`Build ${name} after native tests: ${hash(afterTests)}`);
+      if(hash(beforeTests)!==hash(afterTests)) {
+        console.error('Native test build changed the production executable: '+JSON.stringify(describeDifference(beforeTests,afterTests)));
+      }
       binaries.push(binary);binaryHashes.push(hash(fs.readFileSync(binary)));
     }
-    if (binaryHashes[0] !== binaryHashes[1]) throw new Error(`Builds differ: ${binaryHashes.join(' != ')}; no candidate published`);
+    if (binaryHashes[0] !== binaryHashes[1]) {
+      try {console.error('Independent build diagnostics: '+JSON.stringify(describeDifference(fs.readFileSync(binaries[0]),fs.readFileSync(binaries[1]))));}
+      catch {console.error('Build mismatch diagnostics unavailable; full-hash comparison still failed.');}
+      throw new Error(`Builds differ: ${binaryHashes.join(' != ')}; no candidate published`);
+    }
     const pe = inspect(fs.readFileSync(binaries[0]));
     if (pe.dynamic_crt_imports.length) throw new Error('Release still imports a dynamic C runtime: '+pe.dynamic_crt_imports.join(', '));
     const payload = path.join(stage,'output');fs.mkdirSync(payload);
@@ -103,4 +144,4 @@ if (require.main === module) {
   if (!process.argv[2] || process.argv.slice(3).some(arg=>arg!=='--test')) throw new Error('Usage: node scripts/build-windows.cjs NEW_OUTPUT_DIRECTORY [--test]');
   build(process.argv[2],process.argv.includes('--test'));
 }
-module.exports = {build};
+module.exports = {build,describeBinary,describeDifference};
