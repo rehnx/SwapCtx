@@ -126,11 +126,15 @@ With a separately installed provider, keep its original terminal UI:
 & $SwapCtx native claude --context
 ```
 
-The plain forms need no Node and share no SwapCtx context. The context forms
-need Node.js 24+ and the required hook capabilities. Windows native discovery
-requires the underlying `.exe`; use `--executable ABSOLUTE_PATH` if a shell shim
-is what your ordinary terminal command resolves to. Context mode also accepts
-`--node ABSOLUTE_PATH`. It never modifies provider settings or instruction files.
+Plain native `.exe` launches share no SwapCtx context and need no Node.
+A standard npm JavaScript entry also needs Node when context sharing is off.
+Context mode requires Node.js 24+ and the documented hook capabilities.
+Windows native discovery accepts a native `.exe` or resolves a standard provider
+npm shim to its validated package entry without executing the shell shim.
+Use `--executable ABSOLUTE_PATH` to select either supported installation and
+`--node ABSOLUTE_PATH` when a Node runtime is needed. Custom shell layouts are
+refused by `native`; the separate plain `swapctx launch` command supports trusted
+shell shims. Native setup never modifies provider settings or instruction files.
 
 An unsupported probe warns and opens the ordinary UI without context. Invalid
 or incomplete mandatory context fails closed. Hooks remain subject to provider

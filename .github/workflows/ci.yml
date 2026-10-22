@@ -1,15 +1,20 @@
 name: Foundation checks
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  # Superseded PR checks may stop; accepted main/explicit candidates finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   secret-history:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Install checksum-pinned history scanner
@@ -33,7 +38,7 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Supports this source folder both at repository root and in its supplied wrapper.
       - name: Locate crate
         run: |
@@ -58,7 +63,7 @@ jobs:
       - name: Release tests
         working-directory: ${{ env.CRATE_DIR }}
         run: cargo test --locked --release --all-targets
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
       - name: JSON and bridge contracts
@@ -98,8 +103,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
       - name: Provision pinned Rust and locked Windows dependencies
@@ -119,7 +124,7 @@ jobs:
           Get-Content .build/ci-preview/windows-acceptance.json
       - name: Retain exact verified candidate for private release review
         if: ${{ github.event.repository.private }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: swapctx-windows-preview-${{ github.event.pull_request.head.sha || github.sha }}
           path: .build/ci-preview/
@@ -132,10 +137,11 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 10
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: swapctx-windows-preview-${{ github.event.pull_request.head.sha || github.sha }}
           path: ${{ runner.temp }}/swapctx-recipient
+          digest-mismatch: error
       - name: Verify original files and test on a separate Windows host
         shell: pwsh
         run: |
@@ -161,7 +167,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Separate-host recipient acceptance failed' }
           Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'independent-windows-acceptance.json')
       - name: Retain separate-host acceptance evidence privately
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-recipient-${{ github.event.pull_request.head.sha || github.sha }}
           path: ${{ runner.temp }}/independent-windows-acceptance.json
@@ -170,7 +176,7 @@ jobs:
   advisories:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Locate crate
         shell: bash
         run: |
@@ -178,7 +184,7 @@ jobs:
           elif test -f SwapCtx/Cargo.lock; then echo "CRATE_DIR=SwapCtx" >> "$GITHUB_ENV";
           else exit 1; fi
       - name: Install advisory auditor
-        run: cargo install cargo-audit --locked
+        run: cargo install cargo-audit --version 0.22.2 --locked
       - name: Audit locked dependencies
         working-directory: ${{ env.CRATE_DIR }}
         run: cargo audit
