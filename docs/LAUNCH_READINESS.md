@@ -25,7 +25,7 @@ not establish a hosted Windows pass.
 
 - First fix: formatting, Clippy with warnings denied and 104 Rust tests passed in
   each debug/release profile; one existing opt-in performance test ignored.
-- Duplicate-diagnostic candidate: 107 Rust tests passed in each profile with the
+- Duplicate-diagnostic candidate: 110 Rust tests passed in each profile with the
   same ignored performance test. Linux native fixtures explicitly skip 12 Windows
   cases. Windows packaging/PowerShell and fresh producer results must come from CI.
 - Locked Windows third-party inventory: 57 packages matched. Dependency advisory

@@ -46,7 +46,7 @@ The audit evaluates the following dimensions of project memory health:
 
 ### 3. Expired and Outdated Memories
 - Memories created with `--expires-in-days <N>` carry an explicit `expires_at` Unix epoch timestamp.
-- When `expires_at <= current_time`, the record is marked `STALE` and excluded from fresh-only retrieval.
+- When `expires_at <= current_time`, an active valid record is marked `STALE` and excluded from fresh-only retrieval.
 - **Critical distinction:** An expired general note simply drops out of fresh search, but an **expired active requirement breaks native context preparation**.
 - **Remediation:** Renew with `swapctx memory review <id> --expires-in-days <N>`, make permanent with `--clear-expiry`, or archive with `swapctx memory archive <id>`.
 

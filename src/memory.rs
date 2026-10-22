@@ -696,13 +696,20 @@ fn audit_snapshot(conn: &Connection, project: i64, json: bool) -> Result<()> {
     let timestamp = now()?;
     let mut expired_records = Vec::new();
     if modern {
-        let mut stmt = conn.prepare(
+        let sql = format!(
             "SELECT m.id, m.kind, d.memory_key, d.expires_at
              FROM memories m JOIN memory_metadata d ON d.memory_id = m.id
              WHERE m.project_id = ?1 AND coalesce(d.state, 'active') = 'active'
                AND d.expires_at IS NOT NULL AND d.expires_at <= ?2
+               {}
              ORDER BY m.id ASC",
-        )?;
+            if provenance {
+                "AND coalesce(d.validity,'valid')='valid'"
+            } else {
+                ""
+            }
+        );
+        let mut stmt = conn.prepare(&sql)?;
         let mut rows = stmt.query(params![project, timestamp])?;
         while let Some(r) = rows.next()? {
             let id: i64 = r.get(0)?;
@@ -1077,12 +1084,10 @@ fn audit_snapshot(conn: &Connection, project: i64, json: bool) -> Result<()> {
             exp.id, exp.id, exp.id
         ));
     }
-    for prov in unknown_provenance_records
-        .iter()
-        .filter(|r| r.is_requirement)
-    {
+    for prov in &unknown_provenance_records {
         suggestions.push(format!(
-            "Active requirement #{} has unknown provenance ({}/{}). Re-add or supersede it with explicit --source and --actor.",
+            "Active {} #{} has unknown provenance ({}/{}). Re-add or supersede it with explicit --source and --actor.",
+            if prov.is_requirement { "requirement" } else { "record" },
             prov.id,
             sensitive::display(&prov.source, false),
             sensitive::display(&prov.actor, false)

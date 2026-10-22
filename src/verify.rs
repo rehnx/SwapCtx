@@ -109,6 +109,7 @@ pub fn run(
                     "SELECT count(*) FROM memory_metadata d
                      JOIN memories m ON m.id = d.memory_id
                      WHERE m.project_id = ?1 AND coalesce(d.state, 'active') = 'active'
+                       AND coalesce(d.validity, 'valid') = 'valid'
                        AND d.expires_at IS NOT NULL AND d.expires_at <= ?2",
                     rusqlite::params![project, now],
                     |r| r.get(0),

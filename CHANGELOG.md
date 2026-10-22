@@ -8,6 +8,8 @@ This file tracks user-facing changes. Entries below are **unreleased**; the
 - Add checksum-pinned reachable-history scanning, community/launch documentation
   and optional seven-day retention of tested candidates in private GitHub Actions.
 
+- Ignore expiry on invalidated records in audit/strict verification, and give
+  optional unknown-provenance records actionable review guidance.
 - Detect exact active memory duplicate candidates without exposing content,
   automatically merging records or changing retrieval. Report scoped ID groups,
   counts and deliberate review actions in text and audit v1 JSON.

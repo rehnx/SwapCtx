@@ -727,3 +727,38 @@ fn audit_duplicate_ids_preserve_64_bit_identity() {
         .unwrap();
     assert_eq!(ids, r#"[["9007199254740993","9007199254740994"]]"#);
 }
+
+#[test]
+fn audit_optional_unknown_provenance_has_actionable_guidance() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    s.run(&["memory", "add", "ordinary note"], 0);
+    s.db()
+        .execute(
+            "UPDATE memory_origins SET source='legacy-unknown', actor='unknown'",
+            [],
+        )
+        .unwrap();
+    let json = stdout(s.run(&["memory", "audit", "--json"], 0));
+    assert!(json.contains("NEEDS ATTENTION"));
+    assert!(json.contains("Active record #1 has unknown provenance"));
+    assert!(!json.contains("No actions needed"));
+}
+
+#[test]
+fn audit_invalidated_expired_requirement_needs_no_freshness_review() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    s.run(
+        &["memory", "add", "--kind", "requirement", "Old requirement"],
+        0,
+    );
+    s.db()
+        .execute("UPDATE memory_metadata SET expires_at=1000", [])
+        .unwrap();
+    s.run(&["memory", "invalidate", "1", "--reason", "Obsolete"], 0);
+    let json = stdout(s.run(&["memory", "audit", "--json"], 0));
+    assert!(json.contains("\"readiness\":\"READY\""));
+    assert!(json.contains("\"expired_records\":0"));
+    assert!(json.contains("\"review_recommended\":0"));
+}
