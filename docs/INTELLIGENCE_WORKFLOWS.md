@@ -124,8 +124,12 @@ and rule definitions are rejected before target-store matching. Export syncs a t
 the parent directory must exist. Apply validates fields and commits all records,
 origins, history and optional rules in one transaction. Competing keys and rule
 collisions refuse the entire apply; exact structural matches deduplicate.
-Imported `intent` kinds become mandatory `requirement` records. Preview shows
-the first five entries/rules and conflict counts; inspect the full JSON separately
+Imported `intent` kinds become mandatory `requirement` records. Original source
+and actor labels are preserved verbatim; the receiving target is recorded in the
+local import event. Repeated transfers do not grow source labels. Missing sources
+receive a bounded handoff label, and explicit unknown provenance remains unknown
+for default context eligibility. Existing labels and history remain unchanged.
+Preview shows the first five entries/rules and conflict counts; inspect the full JSON separately
 when approving a larger transfer. It does not apply or approve the bundle.
 
 ## Compatibility and safe upgrades

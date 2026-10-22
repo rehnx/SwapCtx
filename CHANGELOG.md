@@ -3,6 +3,12 @@
 This file tracks user-facing changes. Entries below are **unreleased**; the
 `0.1.0` Cargo version does not establish a published release or tag.
 
+## Unreleased — stable handoff provenance
+
+- Preserve original source/actor labels across repeated handoffs, including
+  maximum-length UTF-8 labels. Record the target in import history instead of
+  growing the source label; retain unknown-provenance exclusions.
+
 ## Unreleased — memory quality and launch preparation
 
 - Add checksum-pinned reachable-history scanning, community/launch documentation

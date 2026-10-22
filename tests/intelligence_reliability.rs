@@ -1799,3 +1799,109 @@ fn strict_verification_ignores_expiry_on_invalidated_requirements() {
     s.run(&["memory", "invalidate", "1", "--reason", "Obsolete"], 0);
     s.run(&["verify", "--strict"], 0);
 }
+
+#[test]
+fn handoff_preserves_maximum_provenance_across_repeated_agent_transfers() {
+    let original_source = "é".repeat(2048);
+    assert_eq!(original_source.len(), 4096);
+    let target = "r".repeat(128);
+    let mut sender = Sandbox::new();
+    sender.run(&["init"], 0);
+    sender.run(
+        &[
+            "memory",
+            "add",
+            "--kind",
+            "requirement",
+            "--source",
+            &original_source,
+            "--actor",
+            "architect",
+            "Keep a portable invariant",
+        ],
+        0,
+    );
+    for _ in 0..3 {
+        let bundle = sender._temp.path().join("transfer.json");
+        sender.run(
+            &[
+                "handoff",
+                "export",
+                bundle.to_str().unwrap(),
+                "--target",
+                &target,
+            ],
+            0,
+        );
+        let recipient = Sandbox::new();
+        recipient.run(&["init"], 0);
+        recipient.run(&["handoff", "preview", bundle.to_str().unwrap()], 0);
+        recipient.run(&["handoff", "apply", bundle.to_str().unwrap()], 0);
+        let (source, actor): (String, String) = recipient
+            .db()
+            .query_row("SELECT source,actor FROM memory_origins", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(source, original_source);
+        assert_eq!(actor, "architect");
+        let detail: String = recipient
+            .db()
+            .query_row(
+                "SELECT detail FROM memory_events WHERE action='import'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(detail.contains(&target));
+        recipient.run(&["doctor"], 0);
+        sender = recipient;
+    }
+}
+
+#[test]
+fn handoff_transport_does_not_promote_unknown_original_provenance() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    let bundle = s._temp.path().join("unknown.json");
+    fs::write(&bundle, r#"{"protocol":"swapctx.handoff","version":1,"target":"review-agent","memories":[{"kind":"requirement","content":"Review inherited knowledge","source":"legacy-unknown","actor":"architect"}],"rules":[]}"#).unwrap();
+    s.run(&["handoff", "apply", bundle.to_str().unwrap()], 0);
+    let context = stdout(s.run(&["context"], 0));
+    let (complete, unknown): (bool, i64) = s.db().query_row("SELECT json_extract(?1,'$.coverage.mandatory_context_complete'), json_extract(?1,'$.omitted.unknown_provenance')", [&context], |r| Ok((r.get(0)?,r.get(1)?))).unwrap();
+    assert!(!complete);
+    assert_eq!(unknown, 1);
+    assert!(stdout(s.run(&["memory", "audit"], 0)).contains("Unknown provenance: 1"));
+}
+
+#[test]
+fn handoff_without_original_source_records_bounded_fallback_and_target_history() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    let bundle = s._temp.path().join("unlabelled.json");
+    fs::write(&bundle, r#"{"protocol":"swapctx.handoff","version":1,"target":"review-agent","memories":[{"kind":"note","content":"Review this note"}],"rules":[]}"#).unwrap();
+    s.run(&["handoff", "apply", bundle.to_str().unwrap()], 0);
+    let source: String = s
+        .db()
+        .query_row("SELECT source FROM memory_origins", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(source, "handoff:review-agent");
+    let detail: String = s
+        .db()
+        .query_row(
+            "SELECT detail FROM memory_events WHERE action='import'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(detail.contains("review-agent"));
+    let exported = s._temp.path().join("outgoing.json");
+    s.run(
+        &[
+            "handoff",
+            "export",
+            exported.to_str().unwrap(),
+            "--include-notes",
+        ],
+        0,
+    );
+}
