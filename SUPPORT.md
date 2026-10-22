@@ -39,9 +39,9 @@ When filing a report, please include:
 | Symptom | Cause / Check | Solution |
 | --- | --- | --- |
 | `swapctx` is not found | PATH environment variable does not include SwapCtx installation folder. | Add installation directory (e.g., `%LOCALAPPDATA%\SwapCtx-0.1.0`) to your User Path in Windows environment variables, then restart terminal. |
-| Project not registered | Calling command outside a registered project directory. | Run `swapctx init` at project root. Nested registered projects have separate memory scopes in the same store. Ensure consistent `--data-dir` if overriding store locations. |
-| Node/provider executable missing | Core memory needs no Node. Native adapters need Node.js 24+ and installed provider executables. | Verify Node.js 24+ (`node -v`) and provider installation. For `swapctx native`, use `--executable` or `--node` flags to specify explicit paths if required. |
-| Compatibility warning / plain UI fallback | Provider version/help probe did not pass context hook requirements. | Verify provider CLI supports required hook capability flags. A plain native session can launch without SwapCtx context sharing; the provider retains its own authentication, permissions and network behavior. |
+| Project not registered | Calling command outside a registered project directory. | Run `swapctx init` at project root. Nested projects maintain separate memory stores. Ensure consistent `--data-dir` if overriding store locations. |
+| Node/provider executable missing | Core memory needs no Node. Native adapters need Node.js 24+ and installed provider executables. | Verify Node.js 24+ (`node -v`) and provider installation. Use `--executable` or `--node` flags to specify explicit paths if required. |
+| Compatibility warning / plain UI fallback | Provider version/help probe did not pass context hook requirements. | Verify provider CLI supports required hook capability flags. Plain native session launches safely without context sharing. |
 | No callback recorded | Hooks untrusted, disabled, or skipped by provider. | Check provider configuration and diagnostic logs. Successful preflight output does not imply provider hook invocation. |
 | Context withheld | Incomplete requirement coverage, conflicting records, or secret detection triggered. | Run `swapctx context` locally to inspect reported coverage and exclusions. Address conflicting or invalid records explicitly. |
 | Database busy | Database locked by another active process writing to SQLite. | Close parallel writing tools and retry. Do not delete SQLite WAL/SHM sidecar files. |
