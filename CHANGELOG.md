@@ -3,6 +3,12 @@
 This file tracks user-facing changes. Entries below are **unreleased**; the
 `0.1.0` Cargo version does not establish a published release or tag.
 
+## Unreleased — memory quality and launch preparation
+
+- Detect exact active memory duplicate candidates without exposing content,
+  automatically merging records or changing retrieval. Report scoped ID groups,
+  counts and deliberate review actions in text and audit v1 JSON.
+
 ## Unreleased — handoff and audit reliability
 
 - Make handoff preview handle optional record IDs/counts and normalize imported

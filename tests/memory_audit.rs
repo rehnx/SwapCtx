@@ -616,3 +616,114 @@ fn audit_invalid_rule_diagnostics_are_valid_json_and_terminal_safe() {
     assert!(!text.contains('\u{1b}'));
     assert!(text.contains("BLOCKED"));
 }
+
+#[test]
+fn audit_exact_duplicates_are_scoped_reviewable_and_never_auto_merged() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    for kind in ["note", "NOTE", "decision"] {
+        s.run(
+            &[
+                "memory",
+                "add",
+                "--kind",
+                kind,
+                "Preserve startup observations",
+            ],
+            0,
+        );
+    }
+    for key in ["first", "second"] {
+        s.run(
+            &[
+                "memory",
+                "add",
+                "--key",
+                key,
+                "Preserve startup observations",
+            ],
+            0,
+        );
+    }
+    let before = fs::read(s.data.join("swapctx.db")).unwrap();
+    let json = stdout(s.run(&["memory", "audit", "--json"], 0));
+    let (groups, records, ids, reviews): (i64, i64, String, i64) = s.db().query_row(
+        "SELECT json_extract(?1,'$.quality.duplicate_groups'), json_extract(?1,'$.quality.duplicate_records'), json_extract(?1,'$.quality.duplicates'), json_extract(?1,'$.quality.review_recommended')",
+        [&json], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).unwrap();
+    assert_eq!((groups, records, reviews), (1, 2, 2));
+    assert_eq!(ids, r#"[["1","2"]]"#);
+    assert!(json.contains("NEEDS ATTENTION"));
+    assert!(!json.contains("Preserve startup observations"));
+    assert_eq!(before, fs::read(s.data.join("swapctx.db")).unwrap());
+    let child = s.project.join("child");
+    fs::create_dir(&child).unwrap();
+    assert!(s
+        .command(&child, &["init"])
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let child_output = s
+        .command(&child, &["memory", "audit", "--json"])
+        .output()
+        .unwrap();
+    assert!(child_output.status.success());
+    let child_json = stdout(child_output);
+    assert!(child_json.contains("\"duplicate_groups\":0"));
+    s.run(&["memory", "archive", "2"], 0);
+    let resolved = stdout(s.run(&["memory", "audit", "--json"], 0));
+    assert!(resolved.contains("\"duplicate_groups\":0"));
+    assert!(resolved.contains("\"readiness\":\"READY\""));
+}
+
+#[test]
+fn audit_duplicate_diagnostics_do_not_expose_sensitive_content() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    for _ in 0..2 {
+        s.run(
+            &[
+                "memory",
+                "add",
+                "--allow-sensitive",
+                "api_key = AKIA1234567890123456",
+            ],
+            0,
+        );
+    }
+    let json = stdout(s.run(&["memory", "audit", "--json"], 0));
+    assert!(json.contains("\"duplicate_groups\":1"));
+    assert!(json.contains("\"review_recommended\":2"));
+    assert!(!json.contains("AKIA1234567890123456"));
+}
+
+#[test]
+fn audit_duplicate_ids_preserve_64_bit_identity() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    for _ in 0..2 {
+        s.run(&["memory", "add", "same observation"], 0);
+    }
+    let db = s.db();
+    db.execute_batch(
+        "BEGIN;
+        PRAGMA defer_foreign_keys=ON;
+        UPDATE memories SET id=id+9007199254740992;
+        UPDATE memory_metadata SET memory_id=memory_id+9007199254740992;
+        UPDATE memory_origins SET memory_id=memory_id+9007199254740992;
+        UPDATE memory_events SET memory_id=memory_id+9007199254740992;
+        COMMIT;",
+    )
+    .unwrap();
+    drop(db);
+    let json = stdout(s.run(&["memory", "audit", "--json"], 0));
+    let ids: String = s
+        .db()
+        .query_row(
+            "SELECT json_extract(?1,'$.quality.duplicates')",
+            [&json],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(ids, r#"[["9007199254740993","9007199254740994"]]"#);
+}

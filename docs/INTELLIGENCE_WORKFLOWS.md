@@ -31,7 +31,12 @@ Exit 0 means the diagnostic ran; read its readiness field rather than treating
 exit success as healthy memory. `READY` describes local memory prerequisites,
 not provider installation, hook loading or receipt. Optional stale notes can be
 excluded while mandatory context remains complete. Resolve competing knowledge
-deliberately with review, supersession, invalidation or archival.
+deliberately with review, supersession, invalidation or archival. Exact duplicate
+candidates share kind (ignoring ASCII case), content and key among active valid
+records. Audit reports only their decimal-string IDs in `quality.duplicates`, with group/record
+counts and review guidance. It does not merge them or compare semantic similarity;
+review their provenance before archiving redundant records. Different keys, kinds,
+projects and inactive records are kept distinct.
 
 ## Understand the selected context
 

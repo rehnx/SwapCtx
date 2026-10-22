@@ -34,7 +34,7 @@ Emits a machine-readable JSON packet with schema `swapctx.memory_audit v1`.
 
 ## Evaluated Health Diagnostics
 
-The audit evaluates nine specific dimensions of project memory health:
+The audit evaluates the following dimensions of project memory health:
 
 ### 1. Total and Active Memory Records
 - **Total records:** All memory records saved in the project across its lifetime.
@@ -55,6 +55,17 @@ The audit evaluates nine specific dimensions of project memory health:
 - When two or more active, valid records share the same key in a project, a **key conflict** exists.
 - In native context retrieval, conflicted keys are excluded by default (`--include-conflicts = false`). If any of the competing records is a requirement, mandatory context is incomplete.
 - **Remediation:** Use `swapctx memory supersede <old_id> <new_text>` to create an official successor, or `swapctx memory invalidate <id> --reason <reason>` to mark obsolete statements invalid.
+
+### Exact duplicate candidates
+
+Active valid records with the same kind (ASCII case-insensitive), exact content
+and key are duplicate candidates. Different provenance may justify keeping both;
+review each record before archiving redundant entries. Audit never merges or
+changes records. JSON `quality.duplicate_groups` and `duplicate_records` give
+counts; `quality.duplicates` lists stable decimal-string ID groups without memory content.
+Duplicates contribute to review recommendations and `NEEDS ATTENTION`; optional
+duplicates alone do not make mandatory context incomplete. Keyed duplicates
+retain the existing conflict behavior until deliberately resolved.
 
 ### 5. Invalidated, Archived, and Superseded Records
 SwapCtx never deletes records. Instead, it maintains persistent lifecycle history:
