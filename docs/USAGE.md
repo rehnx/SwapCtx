@@ -143,3 +143,10 @@ repair. Unknown, corrupt, foreign or future schemas are refused. Preserve the
 entire data directory, including SQLite WAL/SHM/journal sidecars. Never delete
 sidecars or reset records as a repair strategy. `init` is not corruption recovery.
 For safe report collection, see [support](../SUPPORT.md).
+
+## Memory intelligence and review
+
+The unified CLI also provides `intent`, `inspect`, `explain`, `handoff`, `verify`
+and `memory audit`. See [daily workflows and machine contracts](INTELLIGENCE_WORKFLOWS.md)
+for examples, exit codes, explicit decision/note transfer, scan coverage and schema
+upgrade guidance. All evidence remains local; hashes are unsigned fingerprints.

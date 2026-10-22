@@ -95,6 +95,350 @@ fn stderr(output: Output) -> String {
     String::from_utf8(output.stderr).unwrap()
 }
 
+fn git(project: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .current_dir(project)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn merged_cli_exposes_all_command_families_without_opening_a_store() {
+    let s = Sandbox::new();
+    for command in [
+        "native", "codex", "context", "memory", "intent", "inspect", "explain", "handoff",
+        "verify", "import", "export",
+    ] {
+        s.run(&[command, "--help"], 0);
+    }
+    assert!(!s.data.exists());
+}
+
+#[test]
+fn staged_credentials_cannot_be_hidden_by_later_worktree_edits() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    fs::write(
+        s.project.join("config.txt"),
+        "api_key = AKIA1234567890123456",
+    )
+    .unwrap();
+    git(&s.project, &["add", "config.txt"]);
+    fs::write(s.project.join("config.txt"), "safe replacement").unwrap();
+    let inspected = stdout(s.run(&["inspect", "--json"], 1));
+    assert!(inspected.contains("\"sensitive\":true"));
+    assert!(!inspected.contains("AKIA1234567890123456"));
+    s.run(&["verify", "--strict"], 1);
+    git(&s.project, &["add", "config.txt"]);
+    s.run(&["inspect", "--json"], 0);
+    s.run(&["verify", "--strict"], 0);
+}
+
+#[test]
+fn nested_git_project_inspection_and_fingerprint_exclude_sibling_changes() {
+    let s = Sandbox::new();
+    let nested = s.project.join("nested");
+    fs::create_dir(&nested).unwrap();
+    let run = |args: &[&str], code| {
+        let output = s.command(&nested, args).output().unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(code),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        stdout(output)
+    };
+    run(&["init"], 0);
+    run(
+        &[
+            "protect",
+            "add",
+            "--path",
+            "blocked.txt",
+            "--reason",
+            "review",
+            "--policy",
+            "deny",
+        ],
+        0,
+    );
+    fs::write(nested.join("blocked.txt"), "nested data").unwrap();
+    fs::write(s.project.join("sibling.txt"), "sibling data").unwrap();
+    let inspected = run(&["inspect", "--json"], 1);
+    assert!(inspected.contains("blocked.txt"));
+    assert!(!inspected.contains("nested/blocked"));
+    assert!(!inspected.contains("sibling"));
+    run(&["verify", "--strict"], 1);
+    fs::remove_file(nested.join("blocked.txt")).unwrap();
+    let before = run(&["verify", "--json"], 0);
+    fs::write(s.project.join("sibling.txt"), "different sibling data").unwrap();
+    let after = run(&["verify", "--json"], 0);
+    assert_eq!(
+        before, after,
+        "sibling changes must not affect project evidence"
+    );
+}
+
+#[test]
+fn explain_path_json_redacts_sensitive_content_and_metadata() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    let secret = "auth api_key = AKIA1234567890123456";
+    s.run(
+        &[
+            "memory",
+            "add",
+            "--kind",
+            "requirement",
+            "--allow-sensitive",
+            secret,
+        ],
+        0,
+    );
+    s.run(
+        &[
+            "protect",
+            "add",
+            "--path",
+            "auth/**",
+            "--reason",
+            secret,
+            "--allow-sensitive",
+        ],
+        0,
+    );
+    for args in [
+        vec!["explain", "--path", "auth/login.rs", "--json"],
+        vec!["explain", "--path", "auth/login.rs"],
+    ] {
+        let output = stdout(s.run(&args, 0));
+        assert!(!output.contains("AKIA1234567890123456"));
+        assert!(output.contains("potential sensitive value hidden"));
+    }
+    s.run(&["explain", "--path", "../outside", "--json"], 1);
+}
+
+#[test]
+fn handoff_rejects_structural_ambiguity_and_oversize_without_writes() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    let bundle = s._temp.path().join("incoming.json");
+    for content in [
+        r#"{"protocol":"swapctx.handoff","version":1}"#,
+        r#"{"protocol":"swapctx.handoff","version":1,"memories":{},"rules":[]}"#,
+        r#"{"protocol":"swapctx.handoff","version":1,"memories":[],"rules":[],"items_count":2}"#,
+        r#"{"protocol":"swapctx.handoff","version":1,"memories":[true],"rules":[]}"#,
+    ] {
+        fs::write(&bundle, content).unwrap();
+        s.run(&["handoff", "preview", bundle.to_str().unwrap()], 1);
+        s.run(&["handoff", "apply", bundle.to_str().unwrap()], 1);
+    }
+    fs::write(&bundle, vec![b' '; 16 * 1024 * 1024 + 1]).unwrap();
+    assert!(stderr(s.run(&["handoff", "apply", bundle.to_str().unwrap()], 1)).contains("16 MiB"));
+    let count: i64 = s
+        .db()
+        .query_row("SELECT count(*) FROM memories", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn imported_intent_remains_mandatory_and_blocks_unsafe_context() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    let bundle = s._temp.path().join("intent.json");
+    fs::write(&bundle, r#"{"protocol":"swapctx.handoff","version":1,"memories":[{"kind":"intent","content":"Keep authentication","key":"auth"}],"rules":[]}"#).unwrap();
+    s.run(&["handoff", "apply", bundle.to_str().unwrap()], 0);
+    let context = stdout(s.run(&["context"], 0));
+    let requirements: i64 = s
+        .db()
+        .query_row(
+            "SELECT json_extract(?1, '$.coverage.active_valid_requirements')",
+            [context],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(requirements, 1);
+    s.run(
+        &["intent", "add", "Different authentication", "--key", "auth"],
+        0,
+    );
+    s.run(&["verify", "--strict"], 1);
+}
+
+#[test]
+fn handoff_decisions_and_notes_are_explicit_fresh_and_project_scoped() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    s.run(&["intent", "add", "Keep public interfaces"], 0);
+    s.run(&["memory", "add", "--kind", "decision", "Use SQLite"], 0);
+    s.run(
+        &[
+            "memory",
+            "add",
+            "--kind",
+            "note",
+            "Next investigate latency",
+        ],
+        0,
+    );
+    s.run(
+        &["memory", "add", "--kind", "note", "Obsolete implementation"],
+        0,
+    );
+    s.db()
+        .execute(
+            "UPDATE memory_metadata SET expires_at=1 WHERE memory_id=4",
+            [],
+        )
+        .unwrap();
+    let default = s._temp.path().join("default.json");
+    let all = s._temp.path().join("all.json");
+    s.run(&["handoff", "export", default.to_str().unwrap()], 0);
+    let baseline = fs::read_to_string(default).unwrap();
+    assert!(baseline.contains("Keep public interfaces"));
+    assert!(!baseline.contains("Use SQLite"));
+    assert!(!baseline.contains("Next investigate"));
+    s.run(
+        &[
+            "handoff",
+            "export",
+            all.to_str().unwrap(),
+            "--include-decisions",
+            "--include-notes",
+        ],
+        0,
+    );
+    let expanded = fs::read_to_string(&all).unwrap();
+    assert!(expanded.contains("Use SQLite"));
+    assert!(expanded.contains("Next investigate"));
+    assert!(!expanded.contains("Obsolete implementation"));
+    let recipient = s.project.join("recipient");
+    fs::create_dir(&recipient).unwrap();
+    for args in [
+        vec!["init"],
+        vec!["handoff", "apply", all.to_str().unwrap()],
+    ] {
+        let result = s.command(&recipient, &args).output().unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+    let count: i64 = s
+        .db()
+        .query_row(
+            "SELECT count(*) FROM memories WHERE project_id=2",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 3);
+}
+
+#[test]
+fn legacy_reads_preserve_store_and_write_migration_preserves_requirements() {
+    for version in [0, 1, 2] {
+        let s = Sandbox::new();
+        fs::create_dir(&s.data).unwrap();
+        let db = s.db();
+        db.execute_batch(include_str!("fixtures/v0.sql")).unwrap();
+        if version == 2 {
+            db.execute_batch(include_str!("../src/schema_v2.sql"))
+                .unwrap();
+        }
+        if version > 0 {
+            db.pragma_update(None, "application_id", 0x53574358)
+                .unwrap();
+        }
+        db.pragma_update(None, "user_version", version).unwrap();
+        db.execute(
+            "INSERT INTO projects(id, path) VALUES(1, ?1)",
+            [s.project.canonicalize().unwrap().to_str().unwrap()],
+        )
+        .unwrap();
+        db.execute("INSERT INTO memories(id,project_id,kind,content) VALUES(1,1,'REQUIREMENT','Preserve legacy knowledge')", []).unwrap();
+        drop(db);
+        let before = fs::read(s.data.join("swapctx.db")).unwrap();
+        assert!(stdout(s.run(&["intent", "list"], 0)).contains("Preserve legacy knowledge"));
+        assert!(stdout(s.run(&["memory", "audit"], 0)).contains("BLOCKED"));
+        for args in [
+            vec!["inspect"],
+            vec!["verify", "--json"],
+            vec!["explain", "--path", "file"],
+            vec!["handoff", "export", "unused.json"],
+        ] {
+            assert!(stderr(s.run(&args, 1)).contains("requires schema 3"));
+        }
+        assert_eq!(before, fs::read(s.data.join("swapctx.db")).unwrap());
+        s.run(&["intent", "pin", "1"], 0);
+        assert_eq!(
+            s.db()
+                .pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
+                .unwrap(),
+            3
+        );
+        assert!(stdout(s.run(&["memory", "get", "1"], 0)).contains("Preserve legacy knowledge"));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn inspection_does_not_read_external_symlinks_and_checks_internal_alias_rules() {
+    use std::os::unix::fs::symlink;
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    let outside = s._temp.path().join("private.txt");
+    fs::write(&outside, "api_key = AKIA1234567890123456").unwrap();
+    symlink(&outside, s.project.join("external.txt")).unwrap();
+    let output = stdout(s.run(&["inspect", "--json"], 0));
+    assert!(output.contains("unreadable_skipped"));
+    assert!(!output.contains("AKIA1234567890123456"));
+    assert!(!output.contains("\"sensitive\":true"));
+    s.run(&["verify", "--strict"], 1);
+    fs::remove_file(s.project.join("external.txt")).unwrap();
+    fs::write(s.project.join("protected.txt"), "internal").unwrap();
+    symlink(s.project.join("protected.txt"), s.project.join("alias.txt")).unwrap();
+    git(&s.project, &["add", "protected.txt"]);
+    git(&s.project, &["commit", "-m", "baseline"]);
+    s.run(
+        &[
+            "protect",
+            "add",
+            "--path",
+            "protected.txt",
+            "--reason",
+            "keep",
+        ],
+        0,
+    );
+    s.run(&["inspect"], 1);
+    s.run(&["verify"], 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn porcelain_newlines_are_preserved_and_non_unicode_fails_closed() {
+    use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    fs::write(s.project.join("line\nbreak.txt"), "text").unwrap();
+    let json = stdout(s.run(&["inspect", "--json"], 0));
+    assert!(json.contains("line\\nbreak.txt"));
+    s.run(&["verify", "--strict"], 0);
+    fs::write(s.project.join(OsString::from_vec(vec![b'x', 0xff])), "text").unwrap();
+    s.run(&["inspect", "--json"], 1);
+    s.run(&["verify", "--strict"], 1);
+}
+
 #[test]
 fn test_intent_lifecycle_and_pinning() {
     let s = Sandbox::new();
@@ -611,7 +955,7 @@ fn test_handoff_conflict_detection_and_structural_matching() {
         &["handoff", "export", conflicted_export.to_str().unwrap()],
         0,
     ));
-    assert!(exp_conf_out.contains("Approved requirements & intent: 0"));
+    assert!(exp_conf_out.contains("Eligible knowledge records:    0"));
 }
 
 #[test]

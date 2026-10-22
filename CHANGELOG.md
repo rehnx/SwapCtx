@@ -3,6 +3,18 @@
 This file tracks user-facing changes. Entries below are **unreleased**; the
 `0.1.0` Cargo version does not establish a published release or tag.
 
+## Unified integration candidate
+
+- Integrate native CLI presentation and stabilized Codex hooks with intent,
+  memory audit, inspection, explainability, JSON handoffs and SHA-256 verification.
+- Scope Git evidence to nested registered projects; check alias destinations and
+  both staged/current contents, reject lossy paths, and disable diff helpers.
+- Redact sensitive JSON explanations, bound and atomically publish handoffs,
+  retain mandatory imported intent and support explicit decision/note transfer.
+- Preserve legacy read/migration behavior, refresh dependency notices, and add
+  Linux native fixtures plus a fresh offline Windows preview CI gate.
+- Candidate evidence and remaining limitations: [integration report](docs/UNIFIED_INTEGRATION.md).
+
 ## Unreleased — Windows preview preparation
 
 ### Presentation and release preparation

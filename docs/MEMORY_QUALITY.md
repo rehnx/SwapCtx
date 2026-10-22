@@ -4,7 +4,7 @@
 
 SwapCtx manages project memory locally and offline using SQLite. Over long coding sessions, project knowledge evolves: requirements change, temporary notes expire, decisions are superseded, and competing statements may be recorded under shared keys.
 
-If project knowledge becomes inconsistent, expired, or conflicted, **native context delivery to coding agents is withheld** to prevent models from hallucinating or operating on invalid instructions.
+If mandatory requirements or boundary-rule coverage is incomplete, native context preparation is withheld. Optional stale or conflicted notes can be excluded without blocking mandatory context. These checks do not establish model receipt or prevent hallucinations.
 
 The `swapctx memory audit` command provides a read-only, non-mutating health inspection of the currently registered project's memory. It evaluates storage integrity, quality lifecycle metrics, and native context readiness, providing actionable guidance to resolve competing, stale, or incomplete records.
 
@@ -87,9 +87,9 @@ The audit synthesizes all diagnostics into an overall readiness status:
 
 | Readiness | Meaning | Native Hook Behavior |
 | :--- | :--- | :--- |
-| **`READY`** | All active requirements and boundary rules are clean, fresh, unconflicted, and fit in the packet budget. | Context is delivered to coding sessions cleanly. |
-| **`NEEDS ATTENTION`** | Project storage is structurally valid, but active memories contain conflicts, expirations, unverified provenance, or secret markers that cause context to be withheld or degraded. | Native hooks fail with `mandatory_context_incomplete`. Context is withheld. |
-| **`BLOCKED`** | A fundamental store prerequisite fails: database schema < 3 (migration required), foreign key / integrity corruption, invalid rule matcher patterns, or packet envelope budget failure. | Native hooks abort before session initialization. |
+| **`READY`** | All active requirements and boundary rules are clean, fresh, unconflicted, and fit in the packet budget. | Local preparation is ready; provider loading and receipt remain unverified. |
+| **`NEEDS ATTENTION`** | Project storage is structurally valid, but active memories contain conflicts, expirations, unverified provenance, or secret markers that cause context to be withheld or degraded. | Mandatory gaps cause `mandatory_context_incomplete`; optional omissions can leave context eligible. |
+| **`BLOCKED`** | A fundamental store prerequisite fails: database schema < 3 (migration required), foreign key / integrity corruption, invalid rule matcher patterns, or packet envelope budget failure. | Local preparation fails; this does not enforce provider behavior. |
 
 ---
 
@@ -101,7 +101,7 @@ The audit does not merely output raw counts; it suggests exact, prioritized acti
 2. **Expired Requirements:** Identifies the requirement ID and provides commands to review, renew, clear expiry, or archive.
 3. **Unknown Provenance:** Identifies requirements lacking provenance and explains how to supersede them with explicit sources and actors.
 4. **Sensitive Markers:** Identifies records flagged by secret-detection heuristics so they can be replaced without sensitive tokens.
-5. **Schema Upgrades:** Identifies outdated schemas and directs the user to run `swapctx doctor` or a write command to upgrade to schema v3.
+5. **Schema Upgrades:** Identifies outdated schemas and directs the user to back up, then use an explicit write command to upgrade to schema v3. `doctor` remains read-only.
 
 ---
 

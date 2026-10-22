@@ -4,7 +4,7 @@ use clap::Subcommand;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use std::{
     fs,
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -18,6 +18,12 @@ pub enum Action {
         /// Include active boundary protection rules in the handoff bundle.
         #[arg(long)]
         include_rules: bool,
+        /// Also transfer eligible decisions; default export contains requirements only.
+        #[arg(long)]
+        include_decisions: bool,
+        /// Also transfer eligible notes. Review plaintext output before sharing.
+        #[arg(long)]
+        include_notes: bool,
         /// Label for the receiving agent or target purpose (default: agent).
         #[arg(long, default_value = "agent")]
         target: String,
@@ -61,12 +67,22 @@ pub fn json_escape(s: &str) -> String {
 }
 
 pub fn run(conn: &mut Connection, project: i64, root: &Path, action: Action) -> Result<()> {
+    crate::storage::require_current(conn)?;
     match action {
         Action::Export {
             destination,
             include_rules,
+            include_decisions,
+            include_notes,
             target,
-        } => export(conn, project, root, &destination, include_rules, &target)?,
+        } => export(
+            conn,
+            project,
+            root,
+            &destination,
+            (include_rules, include_decisions, include_notes),
+            &target,
+        )?,
         Action::Preview { source } => preview(conn, project, &source)?,
         Action::Apply {
             source,
@@ -81,9 +97,10 @@ fn export(
     project: i64,
     _root: &Path,
     destination: &Path,
-    include_rules: bool,
+    selection: (bool, bool, bool),
     target: &str,
 ) -> Result<()> {
+    let (include_rules, include_decisions, include_notes) = selection;
     validate_text("Target label", target, 128)?;
     sensitive::guard(target, false)?;
 
@@ -121,15 +138,18 @@ fn export(
          LEFT JOIN memory_metadata d ON d.memory_id = m.id
          LEFT JOIN memory_origins o ON o.memory_id = m.id
          WHERE m.project_id = ?1
-           AND m.kind IN ('requirement', 'intent')
+           AND (m.kind = 'requirement' COLLATE NOCASE OR m.kind = 'intent' COLLATE NOCASE
+                OR (?3 AND m.kind = 'decision' COLLATE NOCASE)
+                OR (?4 AND m.kind = 'note' COLLATE NOCASE))
            {active_clause}
            {validity_clause}
            {unconflicted_clause}
+           AND o.source != 'legacy-unknown' AND o.actor != 'unknown'
          ORDER BY m.id ASC"
     );
 
     let mut stmt = conn.prepare(&sql)?;
-    let mut rows = stmt.query(params![project, now])?;
+    let mut rows = stmt.query(params![project, now, include_decisions, include_notes])?;
     let mut memories = Vec::new();
 
     while let Some(r) = rows.next()? {
@@ -221,33 +241,31 @@ fn export(
         |r| r.get(0),
     )?;
 
-    if let Some(parent) = destination.parent() {
-        fs::create_dir_all(parent)?;
+    validate_bundle(conn, &json_bundle)?;
+    if json_bundle.len() > MAX_BUNDLE_BYTES as usize {
+        bail!("Handoff exceeds the 16 MiB input/output limit");
     }
-
-    // Atomic file creation to prevent overwrite and symlink races
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(destination)
-        .context(
-            "Destination file already exists or symlink race detected; refusing to overwrite",
-        )?;
-
+    let parent = destination
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let mut file = tempfile::NamedTempFile::new_in(parent)?;
     file.write_all(json_bundle.as_bytes())?;
-    file.flush()?;
+    file.as_file().sync_all()?;
+    file.persist_noclobber(destination)
+        .context("Cannot publish handoff: destination already exists or symlink race detected; parent must exist")?;
 
     println!(
         "Created agent handoff bundle: {}",
         safe(&destination.display().to_string())
     );
-    println!("  - Approved requirements & intent: {}", memories.len());
+    println!("  - Eligible knowledge records:    {}", memories.len());
     println!("  - Boundary rules included:       {}", rules.len());
     println!(
         "  - Target recipient:              {}",
         sensitive::display(target, false)
     );
-    println!("  - Credentials / secrets scrubbed: verified");
+    println!("  - Secret heuristics applied; absence of credentials is not guaranteed");
 
     Ok(())
 }
@@ -257,8 +275,9 @@ fn preview(conn: &Connection, project: i64, source: &Path) -> Result<()> {
         bail!("Handoff bundle file not found: {}", source.display());
     }
 
-    let content = fs::read_to_string(source)?;
+    let content = read_bundle(source)?;
     let parser = rusqlite::Connection::open_in_memory()?;
+    validate_bundle(&parser, &content)?;
 
     let (protocol, version, target, items_count, rules_count): (String, i64, String, i64, i64) =
         parser
@@ -428,7 +447,7 @@ fn preview(conn: &Connection, project: i64, source: &Path) -> Result<()> {
 
     println!(
         "\nTo apply this handoff to current project: swapctx handoff apply {}",
-        source.display()
+        safe(&source.display().to_string())
     );
     Ok(())
 }
@@ -438,8 +457,9 @@ fn apply(conn: &mut Connection, project: i64, source: &Path, allow_sensitive: bo
         bail!("Handoff bundle file not found: {}", source.display());
     }
 
-    let content = fs::read_to_string(source)?;
+    let content = read_bundle(source)?;
     let parser = rusqlite::Connection::open_in_memory()?;
+    validate_bundle(&parser, &content)?;
 
     let (protocol, version, target): (String, i64, String) = parser
         .query_row(
@@ -478,7 +498,13 @@ fn apply(conn: &mut Connection, project: i64, source: &Path, allow_sensitive: bo
     let mut rows = stmt.query([&content])?;
 
     while let Some(r) = rows.next()? {
-        let kind: String = r.get(0)?;
+        let kind: String = r.get::<_, String>(0)?.to_ascii_lowercase();
+        // Intent directives must participate in mandatory context coverage.
+        let kind = if kind == "intent" {
+            "requirement".to_owned()
+        } else {
+            kind
+        };
         let text: String = r.get(1)?;
         let key: Option<String> = r.get(2)?;
         let orig_source: Option<String> = r.get(3)?;
@@ -680,5 +706,66 @@ fn apply(conn: &mut Connection, project: i64, source: &Path, allow_sensitive: bo
     println!("  - Imported boundary rules:       {imported_rules}");
     println!("  - Transaction committed locally");
 
+    Ok(())
+}
+
+const MAX_BUNDLE_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_BUNDLE_ITEMS: i64 = 10_000;
+
+fn read_bundle(source: &Path) -> Result<String> {
+    let file = fs::File::open(source)?;
+    if !file.metadata()?.is_file() {
+        bail!("Handoff source must be an ordinary file");
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_BUNDLE_BYTES + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_BUNDLE_BYTES {
+        bail!("Handoff exceeds the 16 MiB limit");
+    }
+    Ok(String::from_utf8(bytes)?)
+}
+
+fn validate_bundle(parser: &Connection, content: &str) -> Result<()> {
+    let valid: bool = parser
+        .query_row(
+            "SELECT json_type(?1) = 'object'
+          AND json_extract(?1, '$.protocol') = 'swapctx.handoff'
+          AND json_type(?1, '$.version') = 'integer'
+          AND json_extract(?1, '$.version') = 1
+          AND json_type(?1, '$.memories') = 'array'
+          AND json_type(?1, '$.rules') = 'array'",
+            [content],
+            |r| Ok(r.get::<_, Option<bool>>(0)?.unwrap_or(false)),
+        )
+        .context("Invalid handoff JSON")?;
+    if !valid {
+        bail!("Unsupported or malformed handoff bundle");
+    }
+    for (field, count) in [("memories", "items_count"), ("rules", "rules_count")] {
+        let length: i64 = parser.query_row(
+            "SELECT json_array_length(?1, ?2)",
+            params![content, format!("$.{field}")],
+            |r| r.get(0),
+        )?;
+        if length > MAX_BUNDLE_ITEMS {
+            bail!("Too many handoff entries");
+        }
+        let declared: Option<i64> = parser.query_row(
+            "SELECT json_extract(?1, ?2)",
+            params![content, format!("$.{count}")],
+            |r| r.get(0),
+        )?;
+        if declared.is_some_and(|n| n != length) {
+            bail!("Handoff entry count mismatch");
+        }
+        let invalid: bool = parser.query_row(
+            "SELECT EXISTS(SELECT 1 FROM json_each(?1, ?2) WHERE type != 'object')",
+            params![content, format!("$.{field}")],
+            |r| r.get(0),
+        )?;
+        if invalid {
+            bail!("Handoff entries must be objects");
+        }
+    }
     Ok(())
 }

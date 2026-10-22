@@ -1,0 +1,9 @@
+{
+  "status": "validation_in_progress",
+  "date": "2026-10-22",
+  "base": "b84b3cd08a3f175de7c731a9b81d650b4a284871",
+  "merge": "a96f08a",
+  "real_provider_launches": 0,
+  "windows_local": "unavailable_linux_executor",
+  "hosted_ci": "pending"
+}

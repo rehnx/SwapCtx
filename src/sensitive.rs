@@ -59,6 +59,15 @@ pub fn display(text: &str, reveal: bool) -> String {
     }
 }
 
+/// Redact values for a JSON encoder without changing non-sensitive identities.
+pub fn redacted(text: &str) -> &str {
+    if detected(text) {
+        "[potential sensitive value hidden]"
+    } else {
+        text
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

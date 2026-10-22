@@ -192,6 +192,22 @@ fn sized(
 }
 
 pub fn packet(conn: &mut Connection, cwd: &Path, request: &Request) -> Result<String> {
+    if crate::storage::version(conn)? != 3 {
+        bail!("Context requires schema 3; back up and run an explicit write command to migrate");
+    }
+    if request.protocol_version != 1
+        || !(2048..=131072).contains(&request.max_bytes)
+        || !(1..=100).contains(&request.limit)
+    {
+        bail!("Invalid context request bounds or protocol");
+    }
+    if let Some(query) = &request.query {
+        crate::validate_text("Query", query, 4096)?;
+        crate::sensitive::guard(query, false)?;
+        if query.split_whitespace().count() > 16 {
+            bail!("Too many query terms");
+        }
+    }
     let tx = conn.transaction()?; // One consistent snapshot for facts, counts and provenance.
     crate::storage::diagnose(&tx)?;
     let (project, root) = crate::storage::project(&tx, cwd)?;

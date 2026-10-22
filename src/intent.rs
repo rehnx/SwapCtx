@@ -92,16 +92,31 @@ fn list(conn: &Connection, project: i64) -> Result<()> {
         ""
     };
 
+    let metadata = if modern {
+        "d.memory_key, d.expires_at"
+    } else {
+        "NULL, NULL"
+    };
+    let origins = if provenance {
+        "o.source, o.actor"
+    } else {
+        "NULL, NULL"
+    };
+    let order = if modern {
+        "(d.expires_at IS NULL) DESC, m.id ASC"
+    } else {
+        "m.id ASC"
+    };
     let sql = format!(
-        "SELECT m.id, m.content, m.created_at, d.memory_key, d.expires_at, o.source, o.actor
+        "SELECT m.id, m.content, m.created_at, {metadata}, {origins}
          FROM memories m
          {metadata_join}
          {origins_join}
          WHERE m.project_id = ?1
-           AND m.kind IN ('requirement', 'intent')
+           AND (m.kind = 'requirement' COLLATE NOCASE OR m.kind = 'intent' COLLATE NOCASE)
            {active_clause}
            {validity_clause}
-         ORDER BY (d.expires_at IS NULL) DESC, m.id ASC"
+         ORDER BY {order}"
     );
 
     let mut stmt = conn.prepare(&sql)?;
@@ -235,7 +250,7 @@ fn pin(conn: &mut Connection, project: i64, id: i64) -> Result<()> {
     if state != "active" {
         bail!("Cannot pin memory #{id}: record is currently in '{state}' state (only active records can be pinned)");
     }
-    if !matches!(kind.as_str(), "requirement" | "intent") {
+    if !kind.eq_ignore_ascii_case("requirement") && !kind.eq_ignore_ascii_case("intent") {
         bail!(
             "Cannot pin memory #{id}: only 'requirement' records can be promoted to permanent project intent directives (found '{kind}')"
         );
@@ -300,7 +315,7 @@ fn retire(conn: &mut Connection, project: i64, id: i64, reason: &str) -> Result<
     if state != "active" {
         bail!("Cannot retire memory #{id}: record is currently in '{state}' state");
     }
-    if !matches!(kind.as_str(), "requirement" | "intent") {
+    if !kind.eq_ignore_ascii_case("requirement") && !kind.eq_ignore_ascii_case("intent") {
         bail!(
             "Cannot retire memory #{id}: only project intent / requirement directives can be retired (found '{kind}')"
         );

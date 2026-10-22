@@ -777,12 +777,15 @@ fn audit(conn: &mut Connection, project: i64, json: bool) -> Result<()> {
              LEFT JOIN memory_origins o ON o.memory_id = m.id
              WHERE m.project_id = ?1 AND coalesce(d.state, 'active') = 'active' AND coalesce(d.validity, 'valid') = 'valid'
              ORDER BY m.id ASC"
-        } else {
+        } else if modern {
             "SELECT m.id, m.kind, m.content, m.created_at, d.memory_key, 'manual', 'user'
              FROM memories m
              LEFT JOIN memory_metadata d ON d.memory_id = m.id
              WHERE m.project_id = ?1 AND coalesce(d.state, 'active') = 'active'
              ORDER BY m.id ASC"
+        } else {
+            "SELECT id, kind, content, created_at, NULL, 'legacy-unknown', 'unknown'
+             FROM memories WHERE project_id = ?1 ORDER BY id ASC"
         };
         let mut stmt = conn.prepare(sql)?;
         let mut rows = stmt.query(params![project])?;

@@ -2,7 +2,7 @@
 use anyhow::{bail, Context, Result};
 use clap::Args;
 use rusqlite::Connection;
-use std::{path::Path, process::Command};
+use std::path::Path;
 
 use crate::{display::safe, paths, sensitive};
 
@@ -32,6 +32,8 @@ pub struct GitChange {
     pub path: String,
     pub status: String,
     pub orig_path: Option<String>,
+    pub index_status: u8,
+    pub worktree_status: u8,
 }
 
 #[derive(Debug)]
@@ -74,52 +76,43 @@ pub fn json_escape(s: &str) -> String {
 
 /// Robust NUL-delimited parser for `git status --porcelain=v1 -z -uall`.
 /// Avoids line-splitting and handles quotes, spaces, newlines, and renames cleanly.
-pub fn parse_git_status_z(bytes: &[u8]) -> Vec<GitChange> {
+pub fn parse_git_status_z(bytes: &[u8]) -> Result<Vec<GitChange>> {
+    let mut fields = bytes.split(|b| *b == 0);
     let mut changes = Vec::new();
-    let mut i = 0;
-    while i + 3 <= bytes.len() {
-        let status = match std::str::from_utf8(&bytes[i..i + 2]) {
-            Ok(s) => s.trim().to_string(),
-            Err(_) => break,
-        };
-        let is_rename_or_copy =
-            bytes[i] == b'R' || bytes[i + 1] == b'R' || bytes[i] == b'C' || bytes[i + 1] == b'C';
-        i += 3; // skip status code (2 bytes) and space (1 byte)
-
-        // Find NUL terminator for path
-        let end = match bytes[i..].iter().position(|&b| b == 0) {
-            Some(pos) => i + pos,
-            None => bytes.len(),
-        };
-        let path = String::from_utf8_lossy(&bytes[i..end]).replace('\\', "/");
-        i = if end < bytes.len() { end + 1 } else { end };
-
-        let orig_path = if is_rename_or_copy && i < bytes.len() {
-            let orig_end = match bytes[i..].iter().position(|&b| b == 0) {
-                Some(pos) => i + pos,
-                None => bytes.len(),
-            };
-            let orig = String::from_utf8_lossy(&bytes[i..orig_end]).replace('\\', "/");
-            i = if orig_end < bytes.len() {
-                orig_end + 1
-            } else {
-                orig_end
-            };
-            Some(orig)
+    while let Some(field) = fields.next() {
+        if field.is_empty() {
+            if fields.next().is_some() {
+                bail!("Malformed Git status evidence");
+            }
+            break;
+        }
+        if field.len() < 4 || field[2] != b' ' || !bytes.ends_with(&[0]) {
+            bail!("Malformed Git status evidence");
+        }
+        let status = std::str::from_utf8(&field[..2])?.trim().to_owned();
+        let path = std::str::from_utf8(&field[3..])?.to_owned();
+        let orig_path = if field[..2].iter().any(|b| matches!(b, b'R' | b'C')) {
+            let original = fields.next().context("Missing Git rename source")?;
+            if original.is_empty() {
+                bail!("Missing Git rename source");
+            }
+            Some(std::str::from_utf8(original)?.to_owned())
         } else {
             None
         };
-
         changes.push(GitChange {
             path,
             status,
             orig_path,
+            index_status: field[0],
+            worktree_status: field[1],
         });
     }
-    changes
+    Ok(changes)
 }
 
 pub fn run(conn: &Connection, project: i64, root: &Path, options: Options) -> Result<u8> {
+    crate::storage::require_current(conn)?;
     // Collect boundary rules from database
     let mut stmt = conn.prepare(
         "SELECT r.id, r.pattern, r.reason, coalesce(p.policy, 'deny')
@@ -139,6 +132,9 @@ pub fn run(conn: &Connection, project: i64, root: &Path, options: Options) -> Re
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
+    for rule in &rules {
+        paths::rule_matcher(&rule.pattern)?;
+    }
     let changes = collect_changes(root, options.path.as_deref())?;
 
     let mut audited_changes = Vec::new();
@@ -156,8 +152,10 @@ pub fn run(conn: &Connection, project: i64, root: &Path, options: Options) -> Re
 
         for path_str in paths_to_check {
             for rule in &rules {
-                if let Ok(matcher) = paths::rule_matcher(&rule.pattern) {
-                    if matcher.is_match(path_str) {
+                let matcher = paths::rule_matcher(&rule.pattern)?;
+                {
+                    let targets = crate::worktree::targets(root, path_str)?;
+                    if targets.iter().any(|path| matcher.is_match(path)) {
                         if rule.policy.eq_ignore_ascii_case("deny") {
                             has_deny_violation = true;
                         }
@@ -170,7 +168,7 @@ pub fn run(conn: &Connection, project: i64, root: &Path, options: Options) -> Re
         }
 
         // Check file content for sensitive tokens with honest coverage
-        let sensitive_scan = check_file_sensitive(root, &change.path, &change.status);
+        let sensitive_scan = scan_change(root, &change);
         if sensitive_scan == SensitiveScanResult::Detected {
             has_sensitive_leak = true;
         }
@@ -210,42 +208,18 @@ pub fn run(conn: &Connection, project: i64, root: &Path, options: Options) -> Re
 }
 
 fn collect_changes(root: &Path, specific_path: Option<&str>) -> Result<Vec<GitChange>> {
-    let mut cmd = Command::new("git");
-    cmd.current_dir(root)
-        .args(["status", "--porcelain=v1", "-z", "-uall"]);
+    let parsed = crate::worktree::changes(root)?;
     if let Some(target) = specific_path {
-        cmd.arg("--").arg(target);
-    }
-
-    let output = cmd
-        .output()
-        .context("Failed to execute git command. Ensure git is installed and in PATH.")?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!(
-            "Git status inspection failed (exit code {}): {}",
-            output.status,
-            stderr.trim()
-        );
-    }
-
-    let parsed = parse_git_status_z(&output.stdout);
-    if let Some(target) = specific_path {
-        let norm_target = target.replace('\\', "/");
-        let target_prefix = if norm_target.ends_with('/') {
-            norm_target.clone()
-        } else {
-            format!("{norm_target}/")
-        };
+        let targets = crate::worktree::targets(root, target)?;
         Ok(parsed
             .into_iter()
-            .filter(|c| {
-                c.path == norm_target
-                    || c.path.starts_with(&target_prefix)
-                    || c.orig_path.as_deref() == Some(&norm_target)
-                    || c.orig_path
-                        .as_deref()
-                        .is_some_and(|o| o.starts_with(&target_prefix))
+            .filter(|change| {
+                targets.iter().any(|target| {
+                    [&change.path]
+                        .into_iter()
+                        .chain(change.orig_path.iter())
+                        .any(|path| path == target || path.starts_with(&format!("{target}/")))
+                })
             })
             .collect())
     } else {
@@ -253,30 +227,43 @@ fn collect_changes(root: &Path, specific_path: Option<&str>) -> Result<Vec<GitCh
     }
 }
 
-fn check_file_sensitive(root: &Path, rel_path: &str, status: &str) -> SensitiveScanResult {
-    let full_path = root.join(rel_path);
-    if status.contains('D') || !full_path.exists() {
-        return SensitiveScanResult::Clean;
+pub(crate) fn scan_change(root: &Path, change: &GitChange) -> SensitiveScanResult {
+    let mut result = SensitiveScanResult::Clean;
+    // Inspect the index too: later worktree edits must not hide staged credentials.
+    if !matches!(change.index_status, b' ' | b'?' | b'D') {
+        result = scan_bytes(crate::worktree::index_content(root, &change.path));
     }
-
-    let metadata = match std::fs::metadata(&full_path) {
-        Ok(m) => m,
-        Err(_) => return SensitiveScanResult::UnreadableSkipped,
-    };
-
-    if metadata.len() > 256 * 1024 {
-        return SensitiveScanResult::OversizedSkipped(metadata.len());
-    }
-
-    match std::fs::read_to_string(&full_path) {
-        Ok(content) => {
-            for line in content.lines() {
-                if sensitive::guard(line, false).is_err() {
-                    return SensitiveScanResult::Detected;
-                }
+    if change.worktree_status != b'D'
+        && !(change.index_status == b'D' && !root.join(&change.path).exists())
+    {
+        let current = scan_bytes((|| {
+            let full = crate::worktree::readable_file(root, &change.path)?;
+            crate::worktree::bounded_file(&full)
+        })());
+        result = match (&result, current) {
+            (SensitiveScanResult::Detected, _) | (_, SensitiveScanResult::Detected) => {
+                SensitiveScanResult::Detected
             }
-            SensitiveScanResult::Clean
+            (_, SensitiveScanResult::UnreadableSkipped) => SensitiveScanResult::UnreadableSkipped,
+            (_, SensitiveScanResult::OversizedSkipped(n)) => {
+                SensitiveScanResult::OversizedSkipped(n)
+            }
+            (_, SensitiveScanResult::Clean) => result,
+        };
+    }
+    result
+}
+
+fn scan_bytes(bytes: Result<Vec<u8>>) -> SensitiveScanResult {
+    match bytes {
+        Ok(bytes) if bytes.len() > crate::worktree::SCAN_BYTES => {
+            SensitiveScanResult::OversizedSkipped(bytes.len() as u64)
         }
+        Ok(bytes) => match std::str::from_utf8(&bytes) {
+            Ok(content) if sensitive::detected(content) => SensitiveScanResult::Detected,
+            Ok(_) => SensitiveScanResult::Clean,
+            Err(_) => SensitiveScanResult::UnreadableSkipped,
+        },
         Err(_) => SensitiveScanResult::UnreadableSkipped,
     }
 }
@@ -348,14 +335,14 @@ fn render_text(
         };
 
         let rename_detail = if let Some(orig) = &change.orig_path {
-            format!(" (renamed from {})", safe(orig))
+            format!(" (renamed from {})", sensitive::display(orig, false))
         } else {
             String::new()
         };
 
         println!(
             "  - {} ({}){}{}{}",
-            safe(&change.path),
+            sensitive::display(&change.path, false),
             status_desc,
             rename_detail,
             badge,
@@ -367,16 +354,15 @@ fn render_text(
                 "      Rule #{}: policy={} pattern=\"{}\" reason=\"{}\"",
                 rule.rule_id,
                 rule.policy,
-                safe(&rule.pattern),
-                safe(&rule.reason)
+                sensitive::display(&rule.pattern, false),
+                sensitive::display(&rule.reason, false)
             );
         }
 
         if show_diff && !change.matched_rules.is_empty() {
             // Secret-safe diff preview for touched protected files
-            let diff_output = Command::new("git")
-                .current_dir(root)
-                .args(["diff", "--", &change.path])
+            let diff_output = crate::worktree::git(root)
+                .args(["diff", "--no-ext-diff", "--no-textconv", "--", &change.path])
                 .output();
             if let Ok(out) = diff_output {
                 let diff_text = String::from_utf8_lossy(&out.stdout);
@@ -410,7 +396,7 @@ fn render_text(
             "Inspection Result: VIOLATIONS DETECTED ({} deny policies breached)",
             violations
         );
-        println!("Action: Agent modified denied files without authorization.");
+        println!("Action: Review changes matching deny policies; this snapshot does not establish who changed them or authorization.");
     } else if warnings > 0 {
         println!(
             "Inspection Result: ATTENTION ({} files require explicit review)",
@@ -439,7 +425,7 @@ fn render_json(
                 format!(
                     "{{\"id\":{},\"pattern\":\"{}\",\"policy\":\"{}\"}}",
                     r.rule_id,
-                    json_escape(&r.pattern),
+                    json_escape(sensitive::redacted(&r.pattern)),
                     json_escape(&r.policy)
                 )
             })
@@ -455,11 +441,11 @@ fn render_json(
 
         files_json.push(format!(
             "{{\"path\":\"{}\",\"status\":\"{}\",\"orig_path\":{},\"sensitive\":{},\"sensitive_status\":\"{}\",\"rules\":[{}]}}",
-            json_escape(&c.path),
+            json_escape(sensitive::redacted(&c.path)),
             json_escape(&c.status),
             c.orig_path
                 .as_ref()
-                .map(|p| format!("\"{}\"", json_escape(p)))
+                .map(|p| format!("\"{}\"", json_escape(sensitive::redacted(p))))
                 .unwrap_or_else(|| "null".into()),
             c.sensitive_scan == SensitiveScanResult::Detected,
             scan_status,

@@ -17,6 +17,7 @@ mod sensitive;
 mod storage;
 mod transfer;
 mod verify;
+mod worktree;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -191,6 +192,10 @@ fn capabilities() {
     println!("Retrieval: literal substring search, active/history filters, explicit expiry and conflict keys");
     println!(
         "Provenance: self-reported origins and transactional lifecycle history; no tamper proofing"
+    );
+    println!("Intelligence: intent, memory audit, explain, inspect, curated handoff and strict local verification");
+    println!(
+        "Fingerprints: versioned SHA-256 state binding, unsigned and not proof of provider receipt"
     );
     println!("Recovery: project SQLite export/import, consistent whole-store backup, restore into a new explicit directory");
     println!("Boundary policies: deny/ask/audit; manual snapshot checks only");

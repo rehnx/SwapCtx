@@ -18,7 +18,7 @@ pub struct Options {
     #[arg(long)]
     pub query: Option<String>,
     /// Context packet budget to simulate (default 7168 bytes).
-    #[arg(long, default_value_t = 7168)]
+    #[arg(long, default_value_t = 7168, value_parser = clap::value_parser!(u32).range(2048..=131072))]
     pub max_bytes: u32,
     /// Emit machine-readable JSON.
     #[arg(long)]
@@ -109,7 +109,7 @@ fn explain_record(
         } else if modern {
             conn.query_row(
                 "SELECT m.kind, m.content, m.created_at, coalesce(d.state, 'active'), d.memory_key, d.expires_at,
-                        'valid', NULL, 'manual', 'user'
+                        'valid', NULL, 'legacy-unknown', 'unknown'
                  FROM memories m
                  LEFT JOIN memory_metadata d ON d.memory_id = m.id
                  WHERE m.project_id = ?1 AND m.id = ?2",
@@ -131,7 +131,7 @@ fn explain_record(
             ).optional()?.context("Memory record not found in this project")?
         } else {
             conn.query_row(
-                "SELECT m.kind, m.content, m.created_at, 'active', NULL, NULL, 'valid', NULL, 'manual', 'user'
+                "SELECT m.kind, m.content, m.created_at, 'active', NULL, NULL, 'valid', NULL, 'legacy-unknown', 'unknown'
                  FROM memories m
                  WHERE m.project_id = ?1 AND m.id = ?2",
                 params![project, id],
@@ -216,20 +216,16 @@ fn explain_record(
         (false, "Sensitive pattern detected".into(), "Secret markers found in content. Invalidate or supersede the record without sensitive credentials.")
     } else {
         // Test packet inclusion via structural lookup inside the records array
-        let in_packet = if let Ok(json) = crate::context::packet(conn, cwd, &request) {
-            conn.query_row(
-                "SELECT EXISTS(
+        let packet = crate::context::packet(conn, cwd, &request)?;
+        let in_packet: bool = conn.query_row(
+            "SELECT EXISTS(
                      SELECT 1 FROM json_each(?1, '$.records')
                      WHERE json_extract(value, '$.id') = CAST(?2 AS TEXT)
                         OR json_extract(value, '$.id') = ?2
                  )",
-                params![&json, id],
-                |r| r.get(0),
-            )
-            .unwrap_or(false)
-        } else {
-            false
-        };
+            params![&packet, id],
+            |r| r.get(0),
+        )?;
 
         if in_packet {
             (
@@ -329,7 +325,9 @@ fn explain_path(
     target_path: &str,
     json: bool,
 ) -> Result<()> {
-    let norm_path = target_path.replace('\\', "/");
+    crate::storage::require_current(conn)?;
+    let targets = paths::target_paths(target_path, _root, _root)?;
+    let norm_path = targets[0].clone();
 
     // Boundary rules matching path
     let mut stmt = conn.prepare(
@@ -346,8 +344,9 @@ fn explain_path(
         let pattern: String = r.get(1)?;
         let reason: String = r.get(2)?;
         let policy: String = r.get(3)?;
-        if let Ok(matcher) = paths::rule_matcher(&pattern) {
-            if matcher.is_match(&norm_path) {
+        let matcher = paths::rule_matcher(&pattern)?;
+        {
+            if targets.iter().any(|path| matcher.is_match(path)) {
                 matched_rules.push((id, pattern, policy, reason));
             }
         }
@@ -399,9 +398,9 @@ fn explain_path(
                 format!(
                     "{{\"id\":{},\"pattern\":\"{}\",\"policy\":\"{}\",\"reason\":\"{}\"}}",
                     id,
-                    json_escape(pat),
-                    json_escape(pol),
-                    json_escape(r)
+                    json_escape(sensitive::redacted(pat)),
+                    json_escape(sensitive::redacted(pol)),
+                    json_escape(sensitive::redacted(r))
                 )
             })
             .collect::<Vec<_>>()
@@ -412,9 +411,9 @@ fn explain_path(
                 format!(
                     "{{\"id\":{},\"kind\":\"{}\",\"content\":\"{}\",\"key\":\"{}\"}}",
                     id,
-                    json_escape(kind),
-                    json_escape(content),
-                    json_escape(key.as_deref().unwrap_or(""))
+                    json_escape(sensitive::redacted(kind)),
+                    json_escape(sensitive::redacted(content)),
+                    json_escape(sensitive::redacted(key.as_deref().unwrap_or("")))
                 )
             })
             .collect::<Vec<_>>()
@@ -449,8 +448,8 @@ fn explain_path(
             println!(
                 "  - Rule #{id} [{}]: pattern=\"{}\" reason=\"{}\"",
                 policy.to_ascii_uppercase(),
-                safe(pattern),
-                safe(reason)
+                sensitive::display(pattern, false),
+                sensitive::display(reason, false)
             );
         }
     }

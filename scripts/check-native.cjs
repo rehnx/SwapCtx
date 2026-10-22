@@ -52,8 +52,7 @@ function npmFixture(f,provider,extraEnv={}) {
   return {bin,pkg,report,env,run,read:()=>JSON.parse(fs.readFileSync(report,'utf8'))};
 }
 
-test('actual Rust CLI and embedded adapter deliver all lifecycle events to both synthetic npm providers',()=>{
-  if(process.platform!=='win32') return;
+test('actual Rust CLI and embedded adapter deliver all lifecycle events to both synthetic npm providers',{skip:process.platform!=='win32'},()=>{
   for(const provider of ['codex','claude']) {
     const f=fixture(),n=npmFixture(f,provider,{SWAPCTX_FAKE_MODE:'refresh'});
     const forwarded=provider==='codex'?['resume','synthetic-session','value with space & percent% literal']:['-c','value with space & percent% literal'];
@@ -70,8 +69,7 @@ test('actual Rust CLI and embedded adapter deliver all lifecycle events to both 
   }
 });
 
-test('native health is read-only and never even probes either synthetic provider',()=>{
-  if(process.platform!=='win32') return;
+test('native health is read-only and never even probes either synthetic provider',{skip:process.platform!=='win32'},()=>{
   for(const provider of ['codex','claude']) {
     const f=fixture(),n=npmFixture(f,provider),before=fs.readFileSync(path.join(f.dataDir,'swapctx.db'));
     const r=n.run(['--check']);assert.equal(r.status,0,r.stderr);
@@ -90,8 +88,7 @@ test('native health is read-only and never even probes either synthetic provider
   }
 });
 
-test('npm declared native exe supports health, plain launch and the complete lifecycle chain without executing its shim',()=>{
-  if(process.platform!=='win32') return;
+test('npm declared native exe supports health, plain launch and the complete lifecycle chain without executing its shim',{skip:process.platform!=='win32'},()=>{
   const f=fixture(),n=npmFixture(f,'claude');
   const native=path.join(n.pkg,'bin','claude.exe');
   fs.mkdirSync(path.dirname(native));
@@ -146,8 +143,7 @@ test('npm declared native exe supports health, plain launch and the complete lif
   assert.equal(fs.existsSync(n.report),false);
 });
 
-test('full CLI handles both providers missing hooks, invalid events, wrong projects and provider exits without claiming receipt',()=>{
-  if(process.platform!=='win32') return;
+test('full CLI handles both providers missing hooks, invalid events, wrong projects and provider exits without claiming receipt',{skip:process.platform!=='win32'},()=>{
   for(const provider of ['codex','claude']) for(const mode of ['no-hooks','bad-hook','outside','nested','error','interrupt']) {
     const f=fixture(),overrides={SWAPCTX_FAKE_MODE:mode};
     if(mode==='outside') overrides.SWAPCTX_FAKE_EVENT_CWD=root;
@@ -163,8 +159,7 @@ test('full CLI handles both providers missing hooks, invalid events, wrong proje
   }
 });
 
-test('unsupported provider probes preserve shell-free npm arguments and do not create a store',()=>{
-  if(process.platform!=='win32') return;
+test('unsupported provider probes preserve shell-free npm arguments and do not create a store',{skip:process.platform!=='win32'},()=>{
   for(const provider of ['codex','claude']) {
     const f=fixture(),n=npmFixture(f,provider,{SWAPCTX_FAKE_UNSUPPORTED:'1',SWAPCTX_FAKE_EXIT:'27'}),missing=path.join(root,'absent-'+(++sequence));
     const r=n.run(['--context','--','--resume','a & b % literal'],missing);
@@ -173,8 +168,7 @@ test('unsupported provider probes preserve shell-free npm arguments and do not c
   }
 });
 
-test('full CLI distinguishes Node/config entry and receipt failure even when no callback receipt survives',()=>{
-  if(process.platform!=='win32') return;
+test('full CLI distinguishes Node/config entry and receipt failure even when no callback receipt survives',{skip:process.platform!=='win32'},()=>{
   for(const provider of ['codex','claude']) for(const mode of ['config-invalid','receipt-lock']) {
     const f=fixture(),n=npmFixture(f,provider,{SWAPCTX_FAKE_MODE:mode});
     const r=n.run(['--context']);assert.equal(r.status,0,`${provider}/${mode}: ${r.stderr}`);
@@ -195,8 +189,7 @@ test('full CLI distinguishes Node/config entry and receipt failure even when no 
   }
 });
 
-test('plain npm native launching forwards literal arguments without probes, hooks or memory creation',()=>{
-  if(process.platform!=='win32') return;
+test('plain npm native launching forwards literal arguments without probes, hooks or memory creation',{skip:process.platform!=='win32'},()=>{
   for(const provider of ['codex','claude']) {
     const f=fixture(),n=npmFixture(f,provider),missing=path.join(root,'no-plain-store-'+(++sequence));
     const args=['--resume','space & | < > ^ % ! " literal'];
@@ -206,8 +199,7 @@ test('plain npm native launching forwards literal arguments without probes, hook
   }
 });
 
-test('npm metadata cannot escape scope or disguise arbitrary shell shims; health diagnoses missing runtimes',()=>{
-  if(process.platform!=='win32') return;
+test('npm metadata cannot escape scope or disguise arbitrary shell shims; health diagnoses missing runtimes',{skip:process.platform!=='win32'},()=>{
   const f=fixture(),n=npmFixture(f,'codex');
   const manifest=path.join(n.pkg,'package.json'),original=fs.readFileSync(manifest,'utf8');
   const arbitrary=path.join(n.bin,'unrelated.cmd');fs.writeFileSync(arbitrary,'@exit /b 99');
@@ -420,8 +412,7 @@ test('session-only plugin and Codex config preserve user flags, permissions, aut
   for(const name of sentinels) assert.equal(fs.readFileSync(path.join(f.project,name),'utf8'),'preserve '+name);
   assert.deepEqual(fs.readdirSync(f.project).sort(),['.claude','.codex','AGENTS.md','CLAUDE.md']);
 });
-test('Windows encoded command executes actual adapter with spaces and apostrophes and synthetic event',()=>{
-  if(process.platform!=='win32') return;
+test('Windows encoded command executes actual adapter with spaces and apostrophes and synthetic event',{skip:process.platform!=='win32'},()=>{
   const f=fixture();f.options.provider='codex';
   const c=config(f),commands={commandWindows:JSON.parse(/command_windows=("(?:\\.|[^"\\])*")/.exec(c.setup.args[1])[1])};
   assert.ok(c.setup.args[1].includes('additionalContextLimit=0'));
@@ -437,8 +428,7 @@ test('Windows encoded command executes actual adapter with spaces and apostrophe
       hook_event_name:'SessionStart',source:'compact',cwd:f.project}),encoding:'utf8',timeout:15000});
   assert.equal(r.status,0,r.stderr);assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext,/Keep the public interface stable/);
 });
-test('unavailable Windows hook interpreter fails closed and cleans up without affecting Claude exec hooks',async()=>{
-  if(process.platform!=='win32') return;
+test('unavailable Windows hook interpreter fails closed and cleans up without affecting Claude exec hooks',{skip:process.platform!=='win32'},async()=>{
   const f=fixture(),saved=process.env.SystemRoot;
   const before=fs.readdirSync(root).sort();
   try {
@@ -460,8 +450,7 @@ test('unavailable Windows hook interpreter fails closed and cleans up without af
   } finally {process.env.SystemRoot=saved;fs.unlinkSync(redirected);}
 });
 
-test('generated Codex TOML hook survives real Windows outer shells before reaching the adapter',()=>{
-  if(process.platform!=='win32') return;
+test('generated Codex TOML hook survives real Windows outer shells before reaching the adapter',{skip:process.platform!=='win32'},()=>{
   const runner=path.join(root,'windows-hook-runner.exe');
   const built=spawnSync('rustc',[path.join(__dirname,'../tests/fixtures/windows-hook-runner.rs'),'-o',runner],{encoding:'utf8',timeout:60000});
   assert.equal(built.status,0,built.error?.message||built.stderr);
@@ -582,8 +571,7 @@ test('Codex definitions stay stable for the same scope while child paths remain 
   assert.match(warnings.join(),/Do not submit a model prompt/);
 });
 
-test('stable Codex callback pins adapter bytes, scope and launch-local environment without persisting hooks',async()=>{
-  if(process.platform!=='win32') return;
+test('stable Codex callback pins adapter bytes, scope and launch-local environment without persisting hooks',{skip:process.platform!=='win32'},async()=>{
   const f=fixture();f.options.provider='codex';
   const copy=path.join(root,"stable adapter ' & ü.cjs");fs.copyFileSync(script,copy);
   const make=(options=f.options)=>{
@@ -705,12 +693,13 @@ test('Rust context launch falls back for unsupported fake provider even without 
 test('native executable discovery ignores current-directory and relative PATH entries',()=>{
   const project=path.join(root,'untrusted-project'),bin=path.join(root,'trusted-bin');
   fs.mkdirSync(project);fs.mkdirSync(bin);
-  fs.writeFileSync(path.join(project,'codex.exe'),'This project file must never execute');
-  fs.copyFileSync(exe,path.join(bin,'codex.exe'));
+  const providerName=process.platform==='win32'?'codex.exe':'codex';
+  fs.writeFileSync(path.join(project,providerName),'This project file must never execute');
+  fs.copyFileSync(exe,path.join(bin,providerName));
   const env={...process.env,PATH:['.',project,bin].join(path.delimiter)};
   const r=spawnSync(exe,['native','codex','--','--version'],{cwd:project,env,encoding:'utf8',timeout:10000});
   assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/swapctx 0\.1\.0/);
-  assert.equal(fs.readFileSync(path.join(project,'codex.exe'),'utf8'),'This project file must never execute');
+  assert.equal(fs.readFileSync(path.join(project,providerName),'utf8'),'This project file must never execute');
 });
 test('input interruption or a missing end event is bounded and emits no context',async()=>{
   const {PassThrough}=require('node:stream');

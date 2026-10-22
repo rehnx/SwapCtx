@@ -1,9 +1,9 @@
 //! Independently verify boundary rules, context completeness, and constraints without trusting agent claims.
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::Args;
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
-use std::{path::Path, process::Command};
+use std::{io::Read, path::Path};
 
 use crate::{paths, sensitive};
 
@@ -54,6 +54,7 @@ pub fn run(
     root: &Path,
     options: Options,
 ) -> Result<u8> {
+    crate::storage::require_current(conn)?;
     let mut checks = Vec::new();
     let now = crate::memory::now()?;
 
@@ -172,10 +173,7 @@ pub fn run(
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
-    let git_status = Command::new("git")
-        .current_dir(root)
-        .args(["status", "--porcelain=v1", "-z", "-uall"])
-        .output();
+    let git_status = crate::worktree::changes(root);
 
     let mut unscanned_files_count = 0;
     let mut secret_passed = true;
@@ -183,8 +181,7 @@ pub fn run(
         String::from("No secret markers detected in active memories or worktree changes");
 
     match git_status {
-        Ok(out) if out.status.success() => {
-            let changes = crate::inspect::parse_git_status_z(&out.stdout);
+        Ok(changes) => {
             for change in changes {
                 let mut paths_to_check = vec![change.path.as_str()];
                 if let Some(orig) = &change.orig_path {
@@ -193,8 +190,10 @@ pub fn run(
 
                 for path_clean in paths_to_check {
                     for (id, pattern, reason, policy) in &rules {
-                        if let Ok(matcher) = paths::rule_matcher(pattern) {
-                            if matcher.is_match(path_clean) {
+                        let matcher = paths::rule_matcher(pattern)?;
+                        {
+                            let targets = crate::worktree::targets(root, path_clean)?;
+                            if targets.iter().any(|path| matcher.is_match(path)) {
                                 if policy.eq_ignore_ascii_case("deny") {
                                     boundary_passed = false;
                                     boundary_details.push(format!(
@@ -211,51 +210,25 @@ pub fn run(
                     }
                 }
 
-                // Check file content for secrets if modified and existing
-                let full = root.join(&change.path);
-                if full.is_file() {
-                    match std::fs::metadata(&full) {
-                        Ok(meta) if meta.len() > 256 * 1024 => {
-                            unscanned_files_count += 1;
-                        }
-                        Ok(_) => match std::fs::read_to_string(&full) {
-                            Ok(content) => {
-                                for line in content.lines() {
-                                    if sensitive::guard(line, false).is_err() {
-                                        secret_passed = false;
-                                        secret_detail = format!(
-                                            "Worktree file '{}' contains sensitive credential markers",
-                                            change.path
-                                        );
-                                        break;
-                                    }
-                                }
-                            }
-                            Err(_) => {
-                                unscanned_files_count += 1;
-                            }
-                        },
-                        Err(_) => {
-                            unscanned_files_count += 1;
-                        }
+                match crate::inspect::scan_change(root, &change) {
+                    crate::inspect::SensitiveScanResult::Detected => {
+                        secret_passed = false;
+                        secret_detail = format!(
+                            "Worktree/index file '{}' contains sensitive credential markers",
+                            change.path
+                        );
                     }
+                    crate::inspect::SensitiveScanResult::Clean => (),
+                    _ => unscanned_files_count += 1,
                 }
             }
-        }
-        Ok(out) => {
-            // Git exited with error (fail closed)
-            boundary_passed = false;
-            let stderr_snippet = String::from_utf8_lossy(&out.stderr);
-            boundary_details.push(format!(
-                "Git evidence collection failed (status {}): {}",
-                out.status,
-                stderr_snippet.trim()
-            ));
         }
         Err(e) => {
             // Git executable missing or error (fail closed)
             boundary_passed = false;
-            boundary_details.push(format!("Git inspection unavailable (failed closed): {e}"));
+            boundary_details.push(format!(
+                "Git evidence collection failed (failed closed): {e}"
+            ));
         }
     }
 
@@ -341,9 +314,9 @@ fn compute_canonical_state_fingerprint(
     passed: bool,
     checks: &[CheckResult],
 ) -> Result<String> {
-    let mut feed = Vec::new();
-    feed.extend_from_slice(b"swapctx-canonical-v3\n");
-    feed.extend_from_slice(if passed {
+    let mut feed = Sha256::new();
+    feed.update(b"swapctx-canonical-v3\n");
+    feed.update(if passed {
         b"verdict:pass\n"
     } else {
         b"verdict:fail\n"
@@ -351,7 +324,7 @@ fn compute_canonical_state_fingerprint(
 
     // Schema version
     let schema_ver = crate::storage::version(conn)?;
-    feed.extend_from_slice(format!("schema_version:{schema_ver}\n").as_bytes());
+    feed.update(format!("schema_version:{schema_ver}\n").as_bytes());
 
     // Project root canonical representation
     let root_str = crate::paths::path_text(root).unwrap_or("");
@@ -425,8 +398,7 @@ fn compute_canonical_state_fingerprint(
     }
 
     // Include Git head if available for worktree binding
-    let git_head = Command::new("git")
-        .current_dir(root)
+    let git_head = crate::worktree::git(root)
         .args(["rev-parse", "HEAD"])
         .output();
     if let Ok(out) = git_head {
@@ -446,6 +418,7 @@ fn compute_canonical_state_fingerprint(
             "--full-index",
             "--no-ext-diff",
             "--no-textconv",
+            "--relative",
         ],
         vec![
             "diff",
@@ -453,19 +426,25 @@ fn compute_canonical_state_fingerprint(
             "--full-index",
             "--no-ext-diff",
             "--no-textconv",
+            "--relative",
         ],
         vec!["status", "--porcelain=v1", "-z", "-uall"],
         vec!["ls-files", "--stage", "-z"],
     ] {
-        let out = Command::new("git").current_dir(root).args(&args).output()?;
+        let out = crate::worktree::git(root)
+            .args(&args)
+            .args(["--", "."])
+            .output()?;
+        if !out.status.success() {
+            bail!("Git fingerprint evidence unavailable");
+        }
         encode_fields(
             &mut feed,
             &["git", &args.join(" "), &out.status.to_string()],
         );
         encode_bytes(&mut feed, &out.stdout);
     }
-    let out = Command::new("git")
-        .current_dir(root)
+    let out = crate::worktree::git(root)
         .args([
             "ls-files",
             "--cached",
@@ -475,6 +454,9 @@ fn compute_canonical_state_fingerprint(
             "-z",
         ])
         .output()?;
+    if !out.status.success() {
+        bail!("Git file inventory unavailable");
+    }
     for path in out.stdout.split(|b| *b == 0).filter(|p| !p.is_empty()) {
         let path_text = std::str::from_utf8(path)?;
         encode_fields(&mut feed, &["worktree", path_text]);
@@ -490,8 +472,23 @@ fn compute_canonical_state_fingerprint(
                 );
             }
             Ok(meta) if meta.is_file() => {
+                let full = crate::worktree::readable_file(root, path_text)?;
                 encode_fields(&mut feed, &["file"]);
-                encode_bytes(&mut feed, &std::fs::read(&full)?);
+                let mut file = std::fs::File::open(full)?;
+                feed.update(meta.len().to_be_bytes());
+                let mut buffer = [0; 64 * 1024];
+                let mut bytes_read = 0u64;
+                loop {
+                    let count = file.read(&mut buffer)?;
+                    if count == 0 {
+                        break;
+                    }
+                    bytes_read += count as u64;
+                    feed.update(&buffer[..count]);
+                }
+                if bytes_read != meta.len() {
+                    bail!("File changed during fingerprinting");
+                }
             }
             Ok(_) => encode_fields(&mut feed, &["directory"]),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -508,7 +505,7 @@ fn compute_canonical_state_fingerprint(
         );
     }
 
-    let digest = Sha256::digest(&feed);
+    let digest = feed.finalize();
     let hash_manifest = format!(
         "attest:swapctx:v2:sha256:{}:{}:{}:{:x}",
         if passed { "pass" } else { "fail" },
@@ -519,13 +516,13 @@ fn compute_canonical_state_fingerprint(
     Ok(hash_manifest)
 }
 
-fn encode_bytes(feed: &mut Vec<u8>, bytes: &[u8]) {
-    feed.extend_from_slice(&(bytes.len() as u64).to_be_bytes());
-    feed.extend_from_slice(bytes);
+fn encode_bytes(feed: &mut Sha256, bytes: &[u8]) {
+    feed.update((bytes.len() as u64).to_be_bytes());
+    feed.update(bytes);
 }
 
-fn encode_fields(feed: &mut Vec<u8>, fields: &[&str]) {
-    feed.extend_from_slice(&(fields.len() as u64).to_be_bytes());
+fn encode_fields(feed: &mut Sha256, fields: &[&str]) {
+    feed.update((fields.len() as u64).to_be_bytes());
     for field in fields {
         encode_bytes(feed, field.as_bytes());
     }
@@ -549,7 +546,9 @@ fn render_text(
 
     println!();
     if all_passed {
-        println!("VERIFICATION VERDICT: PASS (all local constraints independently satisfied)");
+        println!(
+            "VERIFICATION VERDICT: PASS (local snapshot checks satisfied; no authenticated proof)"
+        );
         println!("Note: Context prepared locally; model receipt and adherence remain unverified.");
         if show_attest {
             println!("Attestation Manifest: {attestation_hash}");
