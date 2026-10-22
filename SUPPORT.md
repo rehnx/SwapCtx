@@ -44,7 +44,7 @@ When filing a report, please include:
 | Compatibility warning / plain UI fallback | Provider version/help probe did not pass context hook requirements. | Verify provider CLI supports required hook capability flags. A plain native session can launch without SwapCtx context sharing; the provider retains its own authentication, permissions and network behavior. |
 | No callback recorded | Hooks untrusted, disabled, or skipped by provider. | Check provider configuration and diagnostic logs. Successful preflight output does not imply provider hook invocation. |
 | Context withheld | Incomplete requirement coverage, conflicting records, or secret detection triggered. | Run `swapctx context` locally to inspect reported coverage and exclusions. Address conflicting or invalid records explicitly. |
-| Database busy | Database locked by another active process writing to SQLite. | Close parallel writing tools and retry. Do not delete SQLite WAL/SHM sidecar files. |
+| Database busy | Another process holds a SQLite lock. Writable connections wait up to 30 seconds per busy operation; read-only connections keep five seconds. Caller deadlines can be shorter. | Close parallel writing tools and retry deliberately. The wait is not a whole-command deadline. Do not delete SQLite WAL/SHM sidecar files or reset the store. |
 | Integrity error | Corrupted or unrecognized SQLite store format. | Preserve the store directory. Restore a verified backup into a new directory using `swapctx --data-dir '...' restore <backup.db>`. Do not run `init` as repair. |
 | Installer destination exists | Destination folder already exists during install. | Specify a new, non-existent destination directory for `install-windows.ps1`. |
 

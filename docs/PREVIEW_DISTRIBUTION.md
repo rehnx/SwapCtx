@@ -46,7 +46,7 @@ target. It verifies cached `.crate` archive SHA-256 values against Cargo.lock,
 then reads original notice text directly from those archives without extraction.
 It includes all root LICENSE/COPYING/NOTICE/UNLICENSE files, the nested
 regex-syntax Unicode data license, and the first public-domain notice from the
-bundled SQLite amalgamation. All 49 locked third-party Windows Cargo packages,
+bundled SQLite amalgamation. All packages in the generated Windows inventory,
 including build dependencies, are covered. Both alternative root licenses are
 retained where present; this does not choose a licensing branch for recipients.
 

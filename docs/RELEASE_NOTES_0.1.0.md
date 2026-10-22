@@ -23,6 +23,11 @@ Codex/Claude lifecycle adapters and developer-controlled handoffs.
 
 ## Reliability corrections in this preview
 
+Writable connections tolerate transient SQLite contention with a bounded
+30-second busy wait per SQLite operation; read-only connections retain five
+seconds for context-callback responsiveness. This does not replay committed
+commands or impose a whole-command deadline. Sustained locks still report errors.
+
 Handoff preview/apply share strict field validation, normalized intent kinds,
 duplicate-member rejection and consistent counts. Repeated agent transfers keep
 bounded original provenance; unknown provenance remains excluded from mandatory
