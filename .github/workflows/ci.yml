@@ -92,8 +92,9 @@ jobs:
           node scripts/check-soak-harness.cjs
           if ($LASTEXITCODE -ne 0) { throw 'Long-session evaluator checks failed' }
   windows-preview:
-    # Build/accept a disposable candidate; never upload or publish distribution files.
-    needs: test
+    # Runs the full offline gate internally; schedule independently of matrix results.
+    # Merging still requires matrix, security, producer and recipient checks.
+    # Retention below is private-only; no public distribution or release.
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
