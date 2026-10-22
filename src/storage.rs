@@ -28,8 +28,11 @@ pub fn open(path: &Path, create: bool, writable: bool) -> Result<Connection> {
     };
     let mut conn = Connection::open_with_flags(path, flags)
         .context("Cannot open local database; run 'swapctx init' for first use")?;
+    // Windows writer bursts can outlast five seconds under filesystem/host load.
+    // Queue writes for a bounded interval without replaying an operation that
+    // may have committed. Keep short read waits for agent callback deadlines.
+    conn.busy_timeout(Duration::from_secs(if create || writable { 30 } else { 5 }))?;
     secure_connection(&conn)?;
-    conn.busy_timeout(Duration::from_secs(5))?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
     if create {
         initialize(&mut conn)?;
@@ -465,6 +468,37 @@ pub fn require_current(conn: &Connection) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn queued_writer_survives_temporary_lock_beyond_five_seconds() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("store.db");
+        let project = temp.path().canonicalize().unwrap();
+        let mut holder = open(&path, true, true).unwrap();
+        let mut queued = open(&path, false, true).unwrap();
+        let lock = holder
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        let (started, ready) = std::sync::mpsc::channel();
+        let writer = std::thread::spawn(move || {
+            started.send(()).unwrap();
+            register(&mut queued, &project)
+        });
+        ready.recv_timeout(Duration::from_secs(5)).unwrap();
+        // Model a slow Windows commit while another already-open writer queues.
+        // The existing five-second handler loses that write before release.
+        std::thread::sleep(Duration::from_secs(6));
+        lock.commit().unwrap();
+        let result = writer.join().unwrap();
+        assert!(result.is_ok(), "Queued writer failed: {result:?}");
+        assert_eq!(
+            holder
+                .query_row("SELECT count(*) FROM projects", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        validate(&holder, false).unwrap();
+    }
 
     #[test]
     fn initialization_is_versioned_and_idempotent() {
