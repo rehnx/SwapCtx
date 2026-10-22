@@ -72,6 +72,9 @@ still controls its context window, lifecycle and model requests.
 | Local project memory | Requirements, decisions and notes in SQLite; no external service required for storage or retrieval. |
 | Traceable lifecycle | Self-reported origins, retained history, review/expiry, invalidation, conflicts and supersession. |
 | Scoped retrieval | Versioned JSON, relevance ranking, byte budgets and explicit mandatory-coverage reporting. |
+| Memory intelligence | Permanent project intent, read-only health audit, and explanations of local context inclusion and omissions. |
+| Worktree evidence | Git boundary inspection, staged/worktree secret heuristics, strict verification and content-bound SHA-256 fingerprints. These are local snapshot checks. |
+| Agent handoffs | Preview and transactionally apply reviewed JSON knowledge bundles; decisions and notes are explicit export options. |
 | Native workflows | Original Codex and Claude Code UIs; optional lifecycle context adapter without editing provider settings or instruction files. |
 | Context continuity | Fresh validated snapshots on supported startup, resume, clear, compact and fork callbacks; no stale-text fallback. |
 | Boundary checks | Persistent deny/ask/audit rules evaluated on request. These do not intercept or prevent file writes. |
@@ -172,6 +175,12 @@ Use `claude` for Claude Code. Legacy `swapctx launch codex` and
 Use `swapctx --help` and `swapctx memory --help` for command discovery.
 [Memory lifecycle, policies and recovery examples](docs/USAGE.md).
 
+For daily work, use `intent` to preserve permanent requirements, `memory audit`
+to find stale or competing knowledge, and `explain` to understand what fits in a
+local context packet. Before switching agents, preview a `handoff`; before review,
+use `inspect` and `verify` to collect local Git and memory evidence.
+[Daily workflow and command contracts](docs/INTELLIGENCE_WORKFLOWS.md).
+
 ## How memory works
 
 1. **Register a project.** `init` registers exactly the current directory. Commands
@@ -211,7 +220,7 @@ See [security boundaries and reporting](SECURITY.md) before sharing sensitive da
 | Workflow | Requirements and evidence |
 | --- | --- |
 | Memory, search, context, policies, backup/recovery | Windows x64 portable CLI; core needs no Node, Rust or AI provider at runtime. |
-| Plain native launch | Separately installed provider. `native` and the menu require underlying `.exe` files on Windows; legacy `launch` also supports `.cmd`/`.bat` shims. |
+| Plain native launch | Separately installed provider: native `.exe` or a validated standard npm package entry. JS entries need Node; legacy `launch` also supports trusted `.cmd`/`.bat` shims. |
 | Native Codex context | Node.js 24+; recognizable Codex version and help advertising `--config` plus the modern hook-trust capability. No minimum compatible release or exact certified version established. Trust is never bypassed. |
 | Native Claude context | Node.js 24+; probe admits major 2 from 2.1.296 with `--plugin-dir`. This admission floor is not a verified supported-version range. |
 | Managed Codex console | Separate existing app-server workflow pinned to Codex CLI 0.162.1 and Node.js 24+; [setup and evidence](docs/PHASE5_EVERYDAY_CODEX.md). |
@@ -232,9 +241,10 @@ Non-Windows release compatibility has not been established by local Windows test
 | Portable distribution | Local candidate preparation and acceptance; see the [current release assessment](docs/PHASE11_RELEASE_READINESS.md). |
 | Public release | Approval pending. Hosted acceptance, clean-machine evidence, advisory review and publisher identity remain release decisions. |
 
-Next priorities are release review, distribution trust and independently verified
-native compatibility. There is no commitment to additional agents or automatic
-conversation capture. Historical engineering reports remain available below.
+Current integration evidence and remaining release work are recorded in the
+[unified integration report](docs/UNIFIED_INTEGRATION.md). Release review,
+distribution trust and independently verified native compatibility remain gates.
+There is no automatic conversation capture. Historical reports remain available below.
 
 ## Documentation
 

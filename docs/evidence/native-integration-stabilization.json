@@ -1,0 +1,66 @@
+{
+  "review_date": "2026-10-20",
+  "local_head": "b84b3cd",
+  "working_tree": "Includes preserved pre-existing native, Gemini CLI and publication documentation changes",
+  "reported_live_milestone": {
+    "source": "Current user report; not a provider session run by this sprint",
+    "previously_reported_codex_version": "0.163.0; not re-probed",
+    "windows_bootstrap": true,
+    "node_entry": true,
+    "config_validated": true,
+    "receipt_write_failed": false,
+    "contexts_prepared": 1,
+    "local_output_writes_completed": 1,
+    "failure_observations": 0,
+    "unfinished_callbacks": 0,
+    "model_output": "SWAP-formatted marker reported; exact value not retained or independently compared",
+    "exact_model_adherence_verified": false,
+    "provider_acceptance_guaranteed": false,
+    "raw_transcript_or_credentials_retained": false
+  },
+  "offline_verification": {
+    "status": "passed",
+    "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -DeterministicOnly",
+    "complete_gate_runs": 1,
+    "exit_code": 0,
+    "formatting": "passed",
+    "clippy_all_targets_warnings_denied": "passed",
+    "locked_offline_release_build": "passed",
+    "rust_tests_passed": 55,
+    "existing_performance_test_ignored": 1,
+    "supplemental_tests": {
+      "schema": 10,
+      "context": 23,
+      "session": 23,
+      "everyday": 28,
+      "native": 46,
+      "package": 19,
+      "windows_release": 4,
+      "offline_oracle_fixtures": 12,
+      "total": 165
+    },
+    "third_party_notices_locked_windows_packages": 49,
+    "documentation": "Passed existing gate (12 files, 59 local links, command/PowerShell syntax); new report local links/fences checked separately",
+    "focused_checks": "Passed: Windows shell dispatch, definition stability, scope/integrity/environment guards and Rust CLI-to-fake-provider chain",
+    "real_provider_processes": 0,
+    "model_requests": 0,
+    "benchmarks_or_soaks": 0,
+    "local_logs": {
+      "stdout": ".build/native-stabilization/verify.stdout.log",
+      "stdout_sha256": "9b4387efdb28c7b25c18219693d5c993f77f6009eda55a5468b166baf9107397",
+      "stderr": ".build/native-stabilization/verify.stderr.log",
+      "stderr_sha256": "eabc326a046cbcf67a2b73594b7cd831d00ec271f4349f3d6010269013a46f8a",
+      "note": "Ignored local files; expected hook_input_timeout from a negative fixture. Review/redact development paths before sharing logs."
+    },
+    "adapter_sha256": "3a28523f04fb557c913d32ca0fe1f04eb6d1bc4aa6bd7b1236846a640e993ce5",
+    "release_executable_sha256": "8248b8edc19fdad8b111fc890e484c15ae47e637d8895b9e27efdf5164be1161",
+    "distribution_status": "Local build and disposable packaging checks only; no release prepared or published"
+  },
+  "remaining_live_verification": [
+    "Persisted Codex trust reuse across two launches of the stable definition",
+    "Installed provider environment delivery and output handling for the new bootstrap",
+    "Exact complete marker comparison and model adherence",
+    "Resume, clear, fork and natural compaction in real provider sessions",
+    "Real Claude Code hook/plugin compatibility and trust"
+  ]
+}

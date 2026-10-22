@@ -68,7 +68,8 @@ test('portable package contains only the allowlisted payload and correct hashes'
   assert.equal(hash(path.join(extracted,'swapctx.exe')),hash(binary));
   assert.match(fs.readFileSync(path.join(extracted,'LICENSE'),'utf8'),/Apache License/);
   const notices = JSON.parse(fs.readFileSync(path.join(extracted,'third-party-inventory.json'),'utf8'));
-  assert.equal(notices.packages.length,49);
+  const expectedNotices = JSON.parse(fs.readFileSync(path.join(__dirname,'../docs/third-party-inventory.json'),'utf8'));
+  assert.deepEqual(notices,expectedNotices,'Packaged notices must exactly match the reviewed locked inventory');
   assert.equal(notices.lock_sha256,hash(path.join(extracted,'Cargo.lock')));
   assert.equal(notices.notices_sha256,hash(path.join(extracted,'THIRD_PARTY_NOTICES.txt')));
   const text = fs.readFileSync(path.join(extracted,'THIRD_PARTY_NOTICES.txt'),'utf8');

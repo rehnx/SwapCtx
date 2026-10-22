@@ -454,6 +454,14 @@ pub fn project(conn: &Connection, cwd: &Path) -> Result<(i64, PathBuf)> {
     bail!("No registered project contains the current folder. Run 'swapctx init' at the project root.")
 }
 
+/// New knowledge/evidence commands need provenance; ordinary reads never migrate.
+pub fn require_current(conn: &Connection) -> Result<()> {
+    if version(conn)? != SCHEMA_VERSION {
+        bail!("This command requires schema 3; back up the store, then run an explicit write command (such as init) to migrate; doctor is read-only");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

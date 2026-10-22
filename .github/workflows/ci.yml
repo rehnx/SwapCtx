@@ -52,11 +52,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Session transport checks failed' }
           node scripts/check-everyday.cjs $taskExecutable
           if ($LASTEXITCODE -ne 0) { throw 'Everyday integration checks failed' }
+          node scripts/check-docs.cjs $taskExecutable
+          if ($LASTEXITCODE -ne 0) { throw 'Documentation checks failed' }
+          node scripts/check-native.cjs $taskExecutable
+          if ($LASTEXITCODE -ne 0) { throw 'Native provider offline checks failed' }
           if ($IsWindows) {
-            node scripts/check-docs.cjs $taskExecutable
-            if ($LASTEXITCODE -ne 0) { throw 'Documentation checks failed' }
-            node scripts/check-native.cjs $taskExecutable
-            if ($LASTEXITCODE -ne 0) { throw 'Native provider offline checks failed' }
             node scripts/third-party.cjs --check
             if ($LASTEXITCODE -ne 0) { throw 'Third-party notices are stale' }
             node scripts/check-package.cjs $taskExecutable
@@ -68,6 +68,31 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Pilot evaluator checks failed' }
           node scripts/check-soak-harness.cjs
           if ($LASTEXITCODE -ne 0) { throw 'Long-session evaluator checks failed' }
+  windows-preview:
+    # Build/accept a disposable candidate; never upload or publish distribution files.
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Provision pinned Rust and locked Windows dependencies
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
+          if ($LASTEXITCODE -ne 0) { throw 'Toolchain provisioning failed' }
+          cargo fetch --locked --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency provisioning failed' }
+      - name: Fresh offline Windows candidate and recipient acceptance
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force .build | Out-Null
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/prepare-preview.ps1 -Destination .build/ci-preview
+          if ($LASTEXITCODE -ne 0) { throw 'Windows preview producer failed' }
+          Get-Content .build/ci-preview/release-checks.json
+          Get-Content .build/ci-preview/windows-acceptance.json
   advisories:
     runs-on: ubuntu-latest
     steps:

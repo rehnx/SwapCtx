@@ -509,7 +509,13 @@ async function main(argv = process.argv.slice(2)) {
     lines = readline.createInterface({input:process.stdin,crlfDelay:Infinity});
     lines.on('SIGINT',interrupt);
     let fresh = options.fresh;
-    if (process.stdin.isTTY && !options.json) {process.stdout.write('Enter a prompt or /help for local commands.\n');lines.setPrompt('swapctx> ');lines.prompt();}
+    if (process.stdin.isTTY && !options.json) {
+      const isColor = process.stdout.isTTY && !process.env.NO_COLOR;
+      const c = isColor ? { cyan: '\x1b[1;96m', dim: '\x1b[90m', white: '\x1b[1;97m', reset: '\x1b[0m' } : { cyan: '', dim: '', white: '', reset: '' };
+      process.stdout.write(`\n  ${c.cyan}SwapCtx Managed Console${c.reset} ${c.dim}· Type a prompt or /help for commands${c.reset}\n\n`);
+      lines.setPrompt(`${c.cyan}swapctx${c.reset}> `);
+      lines.prompt();
+    }
     for await (const line of lines) {
       if (inputFailure) throw inputFailure;
       queued = Math.max(0,queued-1);
@@ -517,7 +523,24 @@ async function main(argv = process.argv.slice(2)) {
       if (!line.trim()) continue;
       if (line === '/exit') break;
       if (line === '/new') {fresh = true;emit({event:'new_session_requested'});}
-      else if (line === '/help') emit({event:'help',commands:['/help','/status','/context','/query [WORDS]','/remember TEXT','/requirement TEXT','/observe on','/observe off','/new','/compact','/send TEXT','/exit'],note:'Only prompts, /send and /compact start Codex. Saved memory refreshes before the next turn.'});
+      else if (line === '/help') {
+        if (process.stdin.isTTY && !options.json) {
+          const isColor = process.stdout.isTTY && !process.env.NO_COLOR;
+          const c = isColor ? { cyan: '\x1b[1;96m', dim: '\x1b[90m', white: '\x1b[1;97m', reset: '\x1b[0m' } : { cyan: '', dim: '', white: '', reset: '' };
+          process.stdout.write(`\n  ${c.cyan}Console Commands:${c.reset}\n`);
+          process.stdout.write(`    ${c.white}/help${c.reset}               ${c.dim}Show available commands${c.reset}\n`);
+          process.stdout.write(`    ${c.white}/status${c.reset}             ${c.dim}Show local status and settings${c.reset}\n`);
+          process.stdout.write(`    ${c.white}/context${c.reset}            ${c.dim}Preview active context memory${c.reset}\n`);
+          process.stdout.write(`    ${c.white}/remember <text>${c.reset}    ${c.dim}Save general note to external memory${c.reset}\n`);
+          process.stdout.write(`    ${c.white}/requirement <text>${c.reset} ${c.dim}Save explicit project requirement${c.reset}\n`);
+          process.stdout.write(`    ${c.white}/query [words]${c.reset}      ${c.dim}Filter context retrieval terms${c.reset}\n`);
+          process.stdout.write(`    ${c.white}/observe on|off${c.reset}     ${c.dim}Toggle redacted observatory telemetry${c.reset}\n`);
+          process.stdout.write(`    ${c.white}/compact${c.reset}            ${c.dim}Request turn compaction${c.reset}\n`);
+          process.stdout.write(`    ${c.white}/new${c.reset}                ${c.dim}Start a fresh session thread${c.reset}\n`);
+          process.stdout.write(`    ${c.white}/exit${c.reset}               ${c.dim}Exit console${c.reset}\n\n`);
+        }
+        emit({event:'help',commands:['/help','/status','/context','/query [WORDS]','/remember TEXT','/requirement TEXT','/observe on','/observe off','/new','/compact','/send TEXT','/exit'],note:'Only prompts, /send and /compact start Codex. Saved memory refreshes before the next turn.'});
+      }
       else if (line === '/status') emit(localStatus(options,files,settings));
       else if (line.startsWith('/remember ') || line.startsWith('/requirement ')) emit(remember(options,line.slice(line.indexOf(' ')+1),line.startsWith('/requirement ')?'requirement':'note'));
       else if (line === '/observe on') {try {observatory.enable();} catch {fail('invalid_observatory_snapshot');}emit({event:'observatory_enabled',enabled:observatory.enabled});}

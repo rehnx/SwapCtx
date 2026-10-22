@@ -123,15 +123,23 @@ tests, not verified native-model integrations.
 The configured event is `SessionStart`, matching `startup`, `resume`, `clear`,
 `compact` and `fork`. Every callback retrieves a new snapshot. It does not replay
 launch-time memory after compaction. This is the intended documented route for
-manual and automatic compaction; **actual provider callback execution, model
-receipt and post-compaction adherence remain unverified**.
+manual and automatic compaction. A later user-reported Codex test observed hook
+execution, one prepared context and one completed local stdout write; exact model
+adherence and post-compaction behavior remain unverified. See the current
+[stabilization evidence and limitations](NATIVE_INTEGRATION_STABILIZATION.md).
 
 Codex requires review/trust of non-managed hooks. SwapCtx never uses the trust
 bypass flag or writes trust records. Review the generated SwapCtx handler in
-Codex's `/hooks`. If the initial hook was skipped pending approval, a subsequent
-`/compact` requests another SessionStart event. Temporary command paths change
-between launches, so approval may be required again. Until a callback succeeds,
-memory availability must not be assumed.
+Codex's `/hooks`. Its command is now stable for unchanged adapter bytes, Node
+path and project/store/SwapCtx executable scope. Per-launch paths travel only in
+the provider child's environment; no stable hook is installed or silently
+approved. Changes to the bound command require normal review again. Actual
+persisted trust reuse remains a live-provider verification item. If startup was
+skipped pending review, an authorized bare `/clear` in a disposable session can
+request another event without a model prompt; do not use `/compact` merely to
+diagnose loading. Claude retains its temporary session-only plugin and its
+native compatibility remains unverified. Until a callback succeeds, memory
+availability must not be assumed.
 
 There is no prompt interception or per-turn memory injection. Changes saved
 during a session are retrieved at its next matching lifecycle event; a supported

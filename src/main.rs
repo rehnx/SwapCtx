@@ -3,7 +3,11 @@ mod backup;
 mod codex;
 mod context;
 mod display;
+mod explain;
+mod handoff;
 mod history;
+mod inspect;
+mod intent;
 mod memory;
 mod native;
 mod paths;
@@ -12,6 +16,8 @@ mod provider;
 mod sensitive;
 mod storage;
 mod transfer;
+mod verify;
+mod worktree;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -22,7 +28,8 @@ use std::{env, path::PathBuf, process::ExitCode};
 #[command(
     name = "swapctx",
     version,
-    about = "Local-first external context memory and manual boundary checks"
+    about = "Local-first external context memory and manual boundary checks",
+    before_help = display::BANNER
 )]
 struct Cli {
     /// Explicit storage directory. Prefer absolute paths when changing folders.
@@ -69,6 +76,31 @@ enum Command {
     Memory {
         #[command(subcommand)]
         action: memory::Action,
+    },
+    /// Authoritative project intent and architectural invariants.
+    Intent {
+        #[command(subcommand)]
+        action: intent::Action,
+    },
+    /// Inspect concurrent agent worktree changes against boundary policies.
+    Inspect {
+        #[command(flatten)]
+        options: inspect::Options,
+    },
+    /// Investigate context delivery decisions, candidate ranking and omissions.
+    Explain {
+        #[command(flatten)]
+        options: explain::Options,
+    },
+    /// Transfer approved knowledge and intent safely between agents.
+    Handoff {
+        #[command(subcommand)]
+        action: handoff::Action,
+    },
+    /// Independently verify boundary rules, context completeness and constraints.
+    Verify {
+        #[command(flatten)]
+        options: verify::Options,
     },
     Privacy,
     /// Report implemented capabilities without opening the database.
@@ -161,6 +193,10 @@ fn capabilities() {
     println!(
         "Provenance: self-reported origins and transactional lifecycle history; no tamper proofing"
     );
+    println!("Intelligence: intent, memory audit, explain, inspect, curated handoff and strict local verification");
+    println!(
+        "Fingerprints: versioned SHA-256 state binding, unsigned and not proof of provider receipt"
+    );
     println!("Recovery: project SQLite export/import, consistent whole-store backup, restore into a new explicit directory");
     println!("Boundary policies: deny/ask/audit; manual snapshot checks only");
     println!("Enforcement: none; no operation is intercepted and no approval is granted");
@@ -230,6 +266,8 @@ fn run(cli: Cli) -> Result<u8> {
         || match &command {
             Command::Protect { action } => action.writable(),
             Command::Memory { action } => action.writable(),
+            Command::Intent { action } => action.writable(),
+            Command::Handoff { action } => action.writable(),
             Command::Import { apply, .. } => *apply,
             _ => false,
         };
@@ -284,16 +322,43 @@ fn run(cli: Cli) -> Result<u8> {
                 [id],
                 |r| r.get(0),
             )?;
-            println!("SWAPCTX v{} - LOCAL MODE", env!("CARGO_PKG_VERSION"));
-            println!("Project: {}", safe(paths::path_text(&root)?));
-            println!("Protected path rules: {rules}");
-            println!("Memory records: {memories}");
-            println!("Database: {}", safe(&db_path.display().to_string()));
-            println!("Schema: {}", storage::version(&conn)?);
-            println!("Agent hooks: not connected; enforcement: none");
+            if display::is_color_enabled() {
+                println!(
+                    "\x1b[1;96mSWAPCTX v{} - LOCAL MODE\x1b[0m",
+                    env!("CARGO_PKG_VERSION")
+                );
+                println!(
+                    "  \x1b[1mProject:\x1b[0m              \x1b[36m{}\x1b[0m",
+                    safe(paths::path_text(&root)?)
+                );
+                println!("  \x1b[1mProtected path rules:\x1b[0m \x1b[33m{rules}\x1b[0m");
+                println!("  \x1b[1mMemory records:\x1b[0m       \x1b[32m{memories}\x1b[0m");
+                println!(
+                    "  \x1b[1mDatabase:\x1b[0m             \x1b[90m{}\x1b[0m",
+                    safe(&db_path.display().to_string())
+                );
+                println!(
+                    "  \x1b[1mSchema:\x1b[0m               \x1b[90m{}\x1b[0m",
+                    storage::version(&conn)?
+                );
+                println!("  \x1b[1mAgent hooks:\x1b[0m          \x1b[90mnot connected; enforcement: none\x1b[0m");
+            } else {
+                println!("SWAPCTX v{} - LOCAL MODE", env!("CARGO_PKG_VERSION"));
+                println!("Project: {}", safe(paths::path_text(&root)?));
+                println!("Protected path rules: {rules}");
+                println!("Memory records: {memories}");
+                println!("Database: {}", safe(&db_path.display().to_string()));
+                println!("Schema: {}", storage::version(&conn)?);
+                println!("Agent hooks: not connected; enforcement: none");
+            }
         }
         Command::Protect { action } => return protect::run(&mut conn, id, &cwd, &root, action),
         Command::Memory { action } => memory::run(&mut conn, id, action)?,
+        Command::Intent { action } => intent::run(&mut conn, id, action)?,
+        Command::Inspect { options } => return inspect::run(&conn, id, &root, options),
+        Command::Explain { options } => return explain::run(&mut conn, id, &cwd, &root, options),
+        Command::Handoff { action } => handoff::run(&mut conn, id, &root, action)?,
+        Command::Verify { options } => return verify::run(&mut conn, id, &cwd, &root, options),
         Command::Export { destination } => transfer::export(&mut conn, id, &destination)?,
         Command::Import {
             source,

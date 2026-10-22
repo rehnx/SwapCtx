@@ -122,8 +122,21 @@ fn relative_text(path: &Path, root: &Path) -> Result<String> {
 /// Check both the name supplied by the caller and its resolved destination.
 /// This is a snapshot check, not a race-free authorization to modify a file.
 pub fn target_paths(target: &str, cwd: &Path, root: &Path) -> Result<Vec<String>> {
-    if target.trim().is_empty() || target.chars().any(char::is_control) {
+    target_paths_impl(target, cwd, root, false)
+}
+
+pub fn git_target_paths(target: &str, root: &Path) -> Result<Vec<String>> {
+    target_paths_impl(target, root, root, true)
+}
+
+fn target_paths_impl(target: &str, cwd: &Path, root: &Path, git_name: bool) -> Result<Vec<String>> {
+    if target.is_empty()
+        || (!git_name && (target.trim().is_empty() || target.chars().any(char::is_control)))
+    {
         bail!("Target path must be nonempty and contain no control characters");
+    }
+    if git_name && cfg!(unix) && target.contains('\\') {
+        bail!("Git filename cannot be represented as a portable policy path");
     }
     let provided = Path::new(target);
     for component in provided.components() {

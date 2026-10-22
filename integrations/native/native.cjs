@@ -3,10 +3,40 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {createHmac,randomBytes} = require('node:crypto');
+const {createHash,createHmac,randomBytes} = require('node:crypto');
 const {spawn,spawnSync} = require('node:child_process');
 const PACKET_BYTES = 7168, CONTEXT_BYTES = 8192;
 const RECEIPT_BYTES=262144;
+// Fixed-size, launch-local observations. Never store event data or context here.
+const STARTUP_BYTES=8, STARTUP_MAGIC='SCX1';
+function startupFile(config) {return path.join(path.dirname(config),'startup.bin');}
+function startupState(config) {
+  const file=startupFile(config),stat=fs.lstatSync(file);
+  requireThat(stat.isFile() && !stat.isSymbolicLink() && stat.size===STARTUP_BYTES,'startup_metadata_invalid');
+  const fd=fs.openSync(file,'r');
+  try {
+    const actual=fs.fstatSync(fd),bytes=Buffer.alloc(STARTUP_BYTES+1);
+    requireThat(actual.dev===stat.dev && actual.ino===stat.ino && actual.size===STARTUP_BYTES,'startup_metadata_invalid');
+    requireThat(fs.readSync(fd,bytes,0,bytes.length,0)===STARTUP_BYTES,'startup_metadata_invalid');
+    const value=bytes.subarray(0,STARTUP_BYTES).toString('latin1');
+    requireThat(/^SCX1[01]{4}$/.test(value),'startup_metadata_invalid');
+    return {bootstrap:value[4]==='1',node:value[5]==='1',config:value[6]==='1',receiptFailed:value[7]==='1'};
+  } finally {fs.closeSync(fd);}
+}
+function markStartup(config,index) {
+  let fd;
+  try {
+    // Only update a pre-created observation file; never create a path derived
+    // from unvalidated config. Missing files retain legacy hook compatibility.
+    startupState(config);
+    const file=startupFile(config),before=fs.lstatSync(file);
+    fd=fs.openSync(file,'r+');const actual=fs.fstatSync(fd);
+    requireThat(actual.dev===before.dev && actual.ino===before.ino && actual.size===STARTUP_BYTES,'startup_metadata_invalid');
+    fs.writeSync(fd,Buffer.from('1'),0,1,4+index);
+  } catch(error) {
+    if(error.code!=='ENOENT') process.stderr.write('SwapCtx: hook_startup_metadata_unavailable; early observations are incomplete.\n');
+  } finally {if(fd!==undefined) {try {fs.closeSync(fd);} catch { /* Diagnostic only. */ }}}
+}
 class Failure extends Error { constructor(code) {super(code);this.code=code;} }
 function requireThat(value, code) {if (!value) throw new Failure(code);}
 function identity(value) {
@@ -190,17 +220,21 @@ async function writeOutput(output,value) {
   } catch {throw new Failure('hook_output_failed');}
   finally {output.off('error',onError);}
 }
-async function hook(file,input=process.stdin,output=process.stdout) {
+async function hook(file,input=process.stdin,output=process.stdout,expectedScope) {
+  markStartup(file,1); // Node entry, before config loading or event input.
   let options,event,logging=true,outputStarted=false;
   const callback=randomBytes(8).toString('hex'); // Local correlation, never a provider session ID.
   function record(stage,extra={}) {
     if(!options || !logging) return;
     const source=['startup','resume','clear','compact','fork'].includes(event?.source)?event.source:'invalid';
     logging=receipt(options,{v:2,callback,source,stage,...extra});
-    if(!logging) process.stderr.write('SwapCtx: continuity metadata unavailable; observations are incomplete. Context validation remains required.\n');
+    if(!logging) {markStartup(file,3);process.stderr.write('SwapCtx: continuity metadata unavailable; observations are incomplete. Context validation remains required.\n');}
   }
   try {
-    options=readConfig(file);
+    try {options=readConfig(file);}
+    catch {throw new Failure('hook_config_invalid');}
+    if(expectedScope!==undefined) requireThat(options.provider==='codex' && launchScope(options)===expectedScope,'hook_session_scope_mismatch');
+    markStartup(file,2);
     record('callback_requested');
     const bytes=await new Promise((resolve,reject)=>{
       const chunks=[];let count=0;
@@ -245,10 +279,50 @@ function probe(provider,exe,run=spawnSync,prefix=[]) {
 }
 function bashQuote(value) {return "'"+value.replace(/\\/g,'/').replace(/'/g,"'\"'\"'")+"'";}
 function psQuote(value) {return "'"+value.replace(/'/g,"''")+"'";}
-function hookCommands(script,config) {
-  const args=[process.execPath,script,'hook',config];
+function launchScope(options) {
+  return createHash('sha256').update('swapctx.native.scope.v1\0'+JSON.stringify(
+    [options.provider,...['project','dataDir','swapctx'].map(key=>identity(options[key]))])).digest('hex');
+}
+// Serialized into the reviewed command, not written to a persistent cache.
+// Only the exact verified adapter bytes execute; no check-then-require race.
+async function stableBootstrap(adapterHash,scope) {
+  let code='hook_session_environment_invalid',fd;
+  try {
+    const fs=require('node:fs'),path=require('node:path');
+    const script=process.env.SWAPCTX_NATIVE_SCRIPT,config=process.env.SWAPCTX_NATIVE_CONFIG;
+    if(Number(process.versions.node.split('.')[0])<24) throw Error();
+    if(![script,config].every(p=>typeof p==='string' && p.length<=32768 && path.isAbsolute(p))
+      || path.basename(config)!=='adapter.json') throw Error();
+    code='hook_adapter_unavailable';
+    const before=fs.lstatSync(script);
+    if(!before.isFile() || before.isSymbolicLink() || before.size>131072) throw Error();
+    fd=fs.openSync(script,'r');const stat=fs.fstatSync(fd);
+    if(stat.dev!==before.dev || stat.ino!==before.ino || stat.size!==before.size) throw Error();
+    const bytes=Buffer.alloc(131073);let length=0,count;
+    while(length<bytes.length && (count=fs.readSync(fd,bytes,length,bytes.length-length,null))>0) length+=count;
+    fs.closeSync(fd);fd=undefined;
+    code='hook_adapter_integrity_failed';
+    if(length!==stat.size || require('node:crypto').createHash('sha256').update(bytes.subarray(0,length)).digest('hex')!==adapterHash) throw Error();
+    code='hook_adapter_load_failed';
+    const module={exports:{}};
+    const builtinRequire=name=>{if(!require('node:module').isBuiltin(name)) throw Error();return require(name);};
+    require('node:vm').compileFunction(new TextDecoder('utf-8',{fatal:true}).decode(bytes.subarray(0,length)),
+      ['require','module','__filename'],{filename:script})(builtinRequire,module,script);
+    code='hook_callback_failed';
+    await module.exports.hook(config,process.stdin,process.stdout,scope);
+  } catch(error) {
+    if(error?.code==='hook_output_failed') code='hook_output_failed';
+    process.stderr.write('SwapCtx: '+code+'; context delivery is unverified.\n');process.exitCode=1;
+  } finally {if(fd!==undefined) {try {require('node:fs').closeSync(fd);} catch { /* best effort */ }}}
+}
+function hookCommands(script,config,stable) {
+  // Compress only our own pinned bootstrap to remain below cmd's 8191-character
+  // command limit after UTF-16 encoding. No untrusted compressed input is read.
+  const entry=stable && 'eval(require(\'node:zlib\').inflateRawSync(Buffer.from(\''+
+    require('node:zlib').deflateRawSync(Buffer.from('('+stableBootstrap.toString()+')('+JSON.stringify(stable.hash)+','+JSON.stringify(stable.scope)+')')).toString('base64')+
+    '\',\'base64\')).toString(\'utf8\'))';
+  const args=stable?[process.execPath,'-e',entry]:[process.execPath,script,'hook',config];
   const command=args.map(bashQuote).join(' ');
-  const ps='& '+args.map(psQuote).join(' ')+'; exit $LASTEXITCODE';
   if(process.platform!=='win32') return {command};
   // Never search a repository or PATH for the Windows hook interpreter.
   const systemRoot=process.env.SystemRoot;
@@ -256,7 +330,25 @@ function hookCommands(script,config) {
     && !/["\r\n%]/.test(systemRoot),'windows_hook_interpreter_unavailable');
   const shell=path.join(systemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
   requireThat(fs.existsSync(shell) && fs.statSync(shell).isFile(),'windows_hook_interpreter_unavailable');
-  return {command,commandWindows:'"'+shell+'" -NoProfile -NonInteractive -EncodedCommand '+Buffer.from(ps,'utf16le').toString('base64')};
+  // Codex can dispatch through cmd /C or PowerShell -Command. A quoted
+  // executable alone is not a PowerShell invocation; legacy cmd argv escaping
+  // also corrupts embedded quotes (#32402). Use only a shell-neutral absolute
+  // token, never PATH lookup or an unquoted user-controlled shell expression.
+  requireThat(/^[A-Za-z]:\\[A-Za-z0-9_.\\-]+$/.test(shell),'windows_hook_interpreter_path_unsupported');
+  // Best-effort update of an existing, fixed-size marker. Its failure must not
+  // gate context or leak exception/path details into our diagnostics.
+  const marker=stable?"([IO.Path]::Combine([IO.Path]::GetDirectoryName([Environment]::GetEnvironmentVariable('SWAPCTX_NATIVE_CONFIG')),'startup.bin'))":psQuote(startupFile(config));
+  const observation="try { if (([IO.File]::GetAttributes("+marker+") -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'invalid marker' }; "+
+    "$s=[IO.File]::Open("+marker+",[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::ReadWrite); try { "+
+    "$b=[byte[]]::new(8); if ($s.Length -eq 8 -and $s.Read($b,0,8) -eq 8 -and [Text.Encoding]::ASCII.GetString($b) -match '^SCX1[01]{4}$') { $s.Position=4; $s.WriteByte(49) } "+
+    "} finally { $s.Dispose() } } catch { [Console]::Error.WriteLine('SwapCtx: hook_startup_metadata_unavailable; early observations are incomplete.') }; ";
+  const ps="$ErrorActionPreference='Stop'; "+observation+"try { "+
+    (stable?'':"if (![IO.File]::Exists("+psQuote(script)+")) { [Console]::Error.WriteLine('SwapCtx: hook_adapter_unavailable; adapter did not start.'); exit 1 }; ")+
+    '& '+args.map(psQuote).join(' ')+'; exit $LASTEXITCODE'+
+    " } catch { [Console]::Error.WriteLine('SwapCtx: hook_node_start_failed; adapter did not start.'); exit 1 }";
+  const commandWindows=shell+' -NoProfile -NonInteractive -EncodedCommand '+Buffer.from(ps,'utf16le').toString('base64');
+  requireThat(commandWindows.length<=8000,'windows_hook_command_too_long');
+  return {command,commandWindows};
 }
 function toml(value) {
   if(typeof value==='string') return JSON.stringify(value);
@@ -266,6 +358,7 @@ function toml(value) {
 }
 function configure(options,directory,script) {
   const config=path.join(directory,'adapter.json');
+  fs.writeFileSync(startupFile(config),STARTUP_MAGIC+'0000',{flag:'wx',mode:0o600});
   const settings={...options,version:1,fingerprintKey:randomBytes(32).toString('hex'),receipt:path.join(directory,'receipt.jsonl')};
   fs.writeFileSync(config,JSON.stringify(settings),{flag:'wx',mode:0o600});
   const handler={type:'command',command:process.execPath,timeout:10};
@@ -280,14 +373,15 @@ function configure(options,directory,script) {
     fs.writeFileSync(path.join(directory,'hooks','hooks.json'),JSON.stringify({hooks:{SessionStart:[group]}}),{flag:'wx'});
     return {args:['--plugin-dir',directory],receipt:settings.receipt};
   }
-  const commands=hookCommands(script,config);
+  const commands=hookCommands(script,config,{hash:createHash('sha256').update(fs.readFileSync(script)).digest('hex'),scope:launchScope(options)});
   handler.command=commands.command;
   if(commands.commandWindows) handler.command_windows=commands.commandWindows;
   handler.additionalContextLimit=0; // Complete independently byte-bounded packet.
-  return {args:['-c','hooks.SessionStart='+toml([group])],receipt:settings.receipt};
+  return {args:['-c','hooks.SessionStart='+toml([group])],receipt:settings.receipt,
+    env:{SWAPCTX_NATIVE_SCRIPT:script,SWAPCTX_NATIVE_CONFIG:config}};
 }
 async function runProvider(exe,args,dependencies={}) {
-  const child=(dependencies.spawn||spawn)(exe,args,{stdio:'inherit',shell:false});
+  const child=(dependencies.spawn||spawn)(exe,args,{stdio:'inherit',shell:false,...(dependencies.env?{env:dependencies.env}:{})});
   const forward=signal=>{child.kill(signal);};
   const interrupt=()=>forward('SIGINT'),terminate=()=>forward('SIGTERM');
   process.on('SIGINT',interrupt);process.on('SIGTERM',terminate);
@@ -316,10 +410,20 @@ async function launch(options,args,dependencies={}) {
     (dependencies.retrieve||retrieve)(options,process.cwd());
     const setup=configure(options,directory,__filename);
     warn('context hooks requested; provider policy/trust may skip them. Adapter output does not prove model receipt or adherence.');
-    if(options.provider==='codex') warn('review SwapCtx in /hooks; trust is never bypassed. After first approval, /compact requests a fresh SessionStart callback.');
-    const code=await run(options.executable,[...prefix,...setup.args,...args]);
+    if(options.provider==='codex') warn('review SwapCtx in /hooks when new or changed. The definition is stable for this adapter, Node path and project/store/executable scope; trust persistence is provider-owned and remains unverified. Hooks disabled by settings/policy will not run. Trust is never bypassed. Do not submit a model prompt to diagnose loading; capture installed/active/trust status and hook errors first.');
+    // Windows environment names are case-insensitive: remove inherited aliases
+    // before supplying these launch-only values. Never mutate the parent's env.
+    const env=setup.env && {...Object.fromEntries(Object.entries(process.env).filter(([key])=>!/^SWAPCTX_NATIVE_(SCRIPT|CONFIG)$/i.test(key))),...setup.env};
+    const code=await run(options.executable,[...prefix,...setup.args,...args],{env});
     if(code!==0) primary=new Failure('native_provider_exit');
-    if(!fs.existsSync(setup.receipt)) warn('no hook callback was recorded; context delivery is unverified (hooks may be missing, disabled or untrusted). Run swapctx native '+options.provider+' --check for local prerequisites; review provider hook trust/policy separately.');
+    try {
+      const s=startupState(path.join(directory,'adapter.json'));
+      warn('local hook stages (observed at least once): Windows bootstrap='+s.bootstrap+', Node entry='+s.node+', config validated='+s.config+', receipt write failed='+s.receiptFailed+'. Provider receipt and model adherence remain unknown.');
+      if(!s.node) warn('hook entry not observed: capture /hooks registration, active/trust status and hook exit/stderr. Absent local observations cannot distinguish skipped loading/trust/policy from shell/Node failure.');
+      else if(!s.config) warn('hook Node entry observed but configuration validation not observed: inspect hook_config_invalid or interrupted config loading.');
+      else if(!fs.existsSync(setup.receipt)) warn('hook config validated but no callback receipt exists: logging failed or metadata was removed; this is not evidence that the hook was skipped.');
+    } catch {warn('early hook observations unavailable or invalid; no conclusion about execution can be drawn.');}
+    if(!fs.existsSync(setup.receipt)) warn('no hook callback was recorded; context delivery is unverified. Hooks may be missing, disabled or untrusted, or fail during shell launch, Node startup, adapter/config loading or receipt writing. Inspect the provider hook exit status/stderr (hook_node_start_failed, hook_adapter_unavailable, hook_config_invalid, or continuity metadata unavailable); no receipt alone cannot identify the failing layer. Run swapctx native '+options.provider+' --check for local prerequisites; it does not test provider shell dispatch.');
     else {
       try {
         const s=summarizeReceipts(setup.receipt);
@@ -351,6 +455,7 @@ function check(options) {
     process.stdout.write('Context: current snapshot validated; mandatory requirements/rules complete (local preparation only)\n');
     configure(options,directory,__filename);
     process.stdout.write('Hook configuration: generated locally; provider loading, version compatibility and trust remain unverified\n');
+    if(options.provider==='codex') process.stdout.write('Hook identity: stable command bound to adapter bytes and project/store/executable scope; trust remains provider-owned\n');
     return 0;
   } catch(error) {
     process.stderr.write('SwapCtx: local health check failed: '+(error instanceof Failure?error.code:'native_check_failed')+
@@ -378,7 +483,7 @@ function optionsFrom(args) {
   requireThat(typeof options.dataDir==='string' && path.isAbsolute(options.dataDir),'invalid_adapter_arguments');
   return {options,args:args.slice(i+1)};
 }
-module.exports={validatePacket,retrieve,eventContext,hook,probe,hookCommands,toml,configure,runProvider,launch,check,optionsFrom,fingerprint,summarizeReceipts,PACKET_BYTES,RECEIPT_BYTES};
+module.exports={validatePacket,retrieve,eventContext,hook,probe,hookCommands,toml,configure,runProvider,launch,check,optionsFrom,fingerprint,summarizeReceipts,startupState,PACKET_BYTES,RECEIPT_BYTES};
 if(require.main===module) (async()=>{
   requireThat(Number(process.versions.node.split('.')[0])>=24,'node_24_required');
   const [mode,...args]=process.argv.slice(2);
