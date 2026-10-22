@@ -260,6 +260,8 @@ Focused fixes, reproducible bug reports and documentation improvements are
 welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md); use [SUPPORT.md](SUPPORT.md)
 for troubleshooting and [SECURITY.md](SECURITY.md) for sensitive reports.
 Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
+Follow the [community conduct policy](CODE_OF_CONDUCT.md).
+[Roadmap](docs/ROADMAP.md) · [Public preview decision record](docs/LAUNCH_READINESS.md) · [Draft release notes](docs/RELEASE_NOTES_0.1.0.md).
 
 SwapCtx is licensed under [Apache-2.0](LICENSE). Dependency authors and licenses
 are acknowledged in [third-party notices](THIRD_PARTY_NOTICES.txt) and the

@@ -50,6 +50,15 @@ selects another cache. Offline commands fail if dependencies are missing rather
 than fetching them. See [release preparation](docs/RELEASE_PREPARATION.md) before
 changing build, packaging or installer behavior.
 
+## History secret scan
+
+CI checks all reachable Git history with checksum-pinned Gitleaks 8.24.3 and
+`.gitleaks.toml`. For local review with the same scanner, run
+`gitleaks git --log-opts=--all --config .gitleaks.toml --redact=100`.
+Only three exact synthetic detector values are excepted; never add broad path,
+commit or token-pattern exclusions to hide a finding. Keep reports redacted and
+outside the repository. A clean scan is heuristic evidence, not secret clearance.
+
 ## Change expectations
 
 - Reproduce genuine defects with small deterministic fixtures. Test the relevant

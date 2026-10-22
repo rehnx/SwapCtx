@@ -573,6 +573,42 @@ struct ContextSim {
     packet_err: Option<String>,
 }
 
+/// Exact duplicate candidates only; similarity never silently merges knowledge.
+fn duplicate_records(conn: &Connection, project: i64, version: i64) -> Result<Vec<Vec<i64>>> {
+    let (join, eligible, key) = if version >= 3 {
+        (
+            "LEFT JOIN memory_metadata d ON d.memory_id=m.id",
+            "AND coalesce(d.state,'active')='active' AND coalesce(d.validity,'valid')='valid'",
+            "coalesce(d.memory_key,'')",
+        )
+    } else if version >= 2 {
+        (
+            "LEFT JOIN memory_metadata d ON d.memory_id=m.id",
+            "AND coalesce(d.state,'active')='active'",
+            "coalesce(d.memory_key,'')",
+        )
+    } else {
+        ("", "", "''")
+    };
+    let sql = format!(
+        "SELECT group_concat(m.id ORDER BY m.id) FROM memories m {join}
+         WHERE m.project_id=?1 {eligible}
+         GROUP BY lower(m.kind), m.content, {key} HAVING count(*) > 1 ORDER BY min(m.id)"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query([project])?;
+    let mut groups = Vec::new();
+    while let Some(row) = rows.next()? {
+        let ids: String = row.get(0)?;
+        groups.push(
+            ids.split(',')
+                .map(str::parse)
+                .collect::<std::result::Result<Vec<i64>, _>>()?,
+        );
+    }
+    Ok(groups)
+}
+
 fn audit(conn: &mut Connection, project: i64, json: bool) -> Result<()> {
     let tx = conn.transaction()?;
     audit_snapshot(&tx, project, json)?;
@@ -660,13 +696,20 @@ fn audit_snapshot(conn: &Connection, project: i64, json: bool) -> Result<()> {
     let timestamp = now()?;
     let mut expired_records = Vec::new();
     if modern {
-        let mut stmt = conn.prepare(
+        let sql = format!(
             "SELECT m.id, m.kind, d.memory_key, d.expires_at
              FROM memories m JOIN memory_metadata d ON d.memory_id = m.id
              WHERE m.project_id = ?1 AND coalesce(d.state, 'active') = 'active'
                AND d.expires_at IS NOT NULL AND d.expires_at <= ?2
+               {}
              ORDER BY m.id ASC",
-        )?;
+            if provenance {
+                "AND coalesce(d.validity,'valid')='valid'"
+            } else {
+                ""
+            }
+        );
+        let mut stmt = conn.prepare(&sql)?;
         let mut rows = stmt.query(params![project, timestamp])?;
         while let Some(r) = rows.next()? {
             let id: i64 = r.get(0)?;
@@ -831,7 +874,12 @@ fn audit_snapshot(conn: &Connection, project: i64, json: bool) -> Result<()> {
         .filter(|r| r.is_requirement)
         .count();
 
+    let duplicates = duplicate_records(conn, project, version)?;
+    let duplicate_records_count: usize = duplicates.iter().map(Vec::len).sum();
     let mut review_recommended_ids = std::collections::HashSet::new();
+    for group in &duplicates {
+        review_recommended_ids.extend(group.iter().copied());
+    }
     for rec in &expired_records {
         review_recommended_ids.insert(rec.id);
     }
@@ -973,7 +1021,8 @@ fn audit_snapshot(conn: &Connection, project: i64, json: bool) -> Result<()> {
         || expired_count > 0
         || unknown_provenance_count > 0
         || sensitive_count > 0
-        || !sensitive_rules.is_empty();
+        || !sensitive_rules.is_empty()
+        || !duplicates.is_empty();
 
     let readiness = if is_blocked {
         "BLOCKED"
@@ -1008,6 +1057,14 @@ fn audit_snapshot(conn: &Connection, project: i64, json: bool) -> Result<()> {
             sensitive::display(pattern, false)
         ));
     }
+    for group in &duplicates {
+        let ids = group
+            .iter()
+            .map(|id| format!("#{id}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        suggestions.push(format!("Review exact duplicate candidates ({ids}). Compare provenance with 'swapctx memory get <id>' and archive redundant records deliberately; no records were merged."));
+    }
     for conf in &conflicting_keys {
         let ids_str = conf
             .record_ids
@@ -1027,12 +1084,10 @@ fn audit_snapshot(conn: &Connection, project: i64, json: bool) -> Result<()> {
             exp.id, exp.id, exp.id
         ));
     }
-    for prov in unknown_provenance_records
-        .iter()
-        .filter(|r| r.is_requirement)
-    {
+    for prov in &unknown_provenance_records {
         suggestions.push(format!(
-            "Active requirement #{} has unknown provenance ({}/{}). Re-add or supersede it with explicit --source and --actor.",
+            "Active {} #{} has unknown provenance ({}/{}). Re-add or supersede it with explicit --source and --actor.",
+            if prov.is_requirement { "requirement" } else { "record" },
             prov.id,
             sensitive::display(&prov.source, false),
             sensitive::display(&prov.actor, false)
@@ -1180,7 +1235,10 @@ fn audit_snapshot(conn: &Connection, project: i64, json: bool) -> Result<()> {
                     'unknown_provenance_requirements', ?18,
                     'sensitive_records', ?19,
                     'sensitive_requirements', ?20,
-                    'review_recommended', ?21
+                    'review_recommended', ?21,
+                    'duplicate_groups', ?32,
+                    'duplicate_records', ?33,
+                    'duplicates', json(?34)
                 ),
                 'coverage', json_object(
                     'requirements_total', ?22,
@@ -1232,6 +1290,23 @@ fn audit_snapshot(conn: &Connection, project: i64, json: bool) -> Result<()> {
                 if sim.scan_truncated { "true" } else { "false" },
                 exclusions_json,
                 actions_json,
+                duplicates.len() as i64,
+                duplicate_records_count as i64,
+                format!(
+                    "[{}]",
+                    duplicates
+                        .iter()
+                        .map(|group| format!(
+                            "[{}]",
+                            group
+                                .iter()
+                                .map(|id| format!("\"{id}\""))
+                                .collect::<Vec<_>>()
+                                .join(",")
+                        ))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                ),
             ],
             |r| r.get(0),
         )?;
@@ -1274,6 +1349,10 @@ fn audit_snapshot(conn: &Connection, project: i64, json: bool) -> Result<()> {
         String::new()
     };
     println!("  Unknown provenance: {unknown_provenance_count}{unk_sub}");
+    println!(
+        "  Duplicate groups: {} (records: {duplicate_records_count})",
+        duplicates.len()
+    );
     println!("  Review recommended: {review_recommended_count}\n");
 
     println!("Native Context Coverage:");

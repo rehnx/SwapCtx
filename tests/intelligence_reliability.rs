@@ -1787,3 +1787,15 @@ fn handoff_preview_counts_entries_without_declared_counts_and_deduplicates() {
     assert!(applied.contains("Imported requirements & intent: 1"));
     assert!(applied.contains("Structurally matched (already present): 1"));
 }
+
+#[test]
+fn strict_verification_ignores_expiry_on_invalidated_requirements() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    s.run(&["intent", "add", "Old requirement"], 0);
+    s.db()
+        .execute("UPDATE memory_metadata SET expires_at=1000", [])
+        .unwrap();
+    s.run(&["memory", "invalidate", "1", "--reason", "Obsolete"], 0);
+    s.run(&["verify", "--strict"], 0);
+}
