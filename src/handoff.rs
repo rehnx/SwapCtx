@@ -285,9 +285,9 @@ fn preview(conn: &Connection, project: i64, source: &Path) -> Result<()> {
                 "SELECT
             json_extract(?1, '$.protocol'),
             json_extract(?1, '$.version'),
-            coalesce(json_extract(?1, '$.target'), 'general'),
-            coalesce(json_extract(?1, '$.items_count'), 0),
-            coalesce(json_extract(?1, '$.rules_count'), 0)",
+            coalesce(json_extract(?1, '$.target'), 'agent'),
+            json_array_length(?1, '$.memories'),
+            json_array_length(?1, '$.rules')",
                 [&content],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
             )
@@ -304,7 +304,7 @@ fn preview(conn: &Connection, project: i64, source: &Path) -> Result<()> {
     println!("Rules:        {rules_count} boundary rules\n");
 
     let mut stmt = parser.prepare(
-        "SELECT json_extract(value, '$.id'), json_extract(value, '$.kind'),
+        "SELECT coalesce(json_extract(value, '$.id'), key + 1), json_extract(value, '$.kind'),
                 json_extract(value, '$.content'), json_extract(value, '$.key')
              FROM json_each(?1, '$.memories')",
     )?;
@@ -313,10 +313,11 @@ fn preview(conn: &Connection, project: i64, source: &Path) -> Result<()> {
     let mut exact_matches = 0;
     let mut key_conflicts = 0;
     let mut new_entries = 0;
+    let mut seen_records = std::collections::HashSet::new();
 
     while let Some(r) = rows.next()? {
         let orig_id: i64 = r.get(0)?;
-        let kind: String = r.get(1)?;
+        let kind = normalized_kind(&r.get::<_, String>(1)?);
         let text: String = r.get(2)?;
         let key: Option<String> = r.get(3)?;
         let clean_key = key.as_deref().filter(|k| !k.is_empty());
@@ -326,7 +327,7 @@ fn preview(conn: &Connection, project: i64, source: &Path) -> Result<()> {
             .query_row(
                 "SELECT m.id FROM memories m
                  LEFT JOIN memory_metadata d ON d.memory_id = m.id
-                 WHERE m.project_id = ?1 AND m.kind = ?2 AND m.content = ?3
+                 WHERE m.project_id = ?1 AND m.kind = ?2 COLLATE NOCASE AND m.content = ?3
                    AND coalesce(d.memory_key, '') = ?4
                    AND coalesce(d.state, 'active') = 'active'
                    AND coalesce(d.validity, 'valid') = 'valid'",
@@ -361,6 +362,13 @@ fn preview(conn: &Connection, project: i64, source: &Path) -> Result<()> {
         } else if let Some(id) = exact_match {
             exact_matches += 1;
             format!(" [EXISTS: exact match #{id}]")
+        } else if !seen_records.insert((
+            kind.clone(),
+            text.clone(),
+            clean_key.unwrap_or("").to_owned(),
+        )) {
+            exact_matches += 1;
+            " [EXISTS: identical earlier bundle entry]".to_owned()
         } else {
             new_entries += 1;
             " [NEW]".to_string()
@@ -498,13 +506,7 @@ fn apply(conn: &mut Connection, project: i64, source: &Path, allow_sensitive: bo
     let mut rows = stmt.query([&content])?;
 
     while let Some(r) = rows.next()? {
-        let kind: String = r.get::<_, String>(0)?.to_ascii_lowercase();
-        // Intent directives must participate in mandatory context coverage.
-        let kind = if kind == "intent" {
-            "requirement".to_owned()
-        } else {
-            kind
-        };
+        let kind = normalized_kind(&r.get::<_, String>(0)?);
         let text: String = r.get(1)?;
         let key: Option<String> = r.get(2)?;
         let orig_source: Option<String> = r.get(3)?;
@@ -555,7 +557,7 @@ fn apply(conn: &mut Connection, project: i64, source: &Path, allow_sensitive: bo
             "SELECT EXISTS(
                  SELECT 1 FROM memories m
                  LEFT JOIN memory_metadata d ON d.memory_id = m.id
-                 WHERE m.project_id = ?1 AND m.kind = ?2 AND m.content = ?3
+                 WHERE m.project_id = ?1 AND m.kind = ?2 COLLATE NOCASE AND m.content = ?3
                    AND coalesce(d.memory_key, '') = ?4
                    AND coalesce(d.state, 'active') = 'active'
                    AND coalesce(d.validity, 'valid') = 'valid'
@@ -741,6 +743,36 @@ fn validate_bundle(parser: &Connection, content: &str) -> Result<()> {
     if !valid {
         bail!("Unsupported or malformed handoff bundle");
     }
+    let duplicate: bool = parser.query_row(
+        "SELECT EXISTS(SELECT 1 FROM json_tree(?1) WHERE key IS NOT NULL
+         GROUP BY parent, key HAVING count(*) > 1)",
+        [content],
+        |r| r.get(0),
+    )?;
+    if duplicate {
+        bail!("Duplicate JSON member in handoff bundle");
+    }
+    for (field, expected) in [
+        ("target", "text"),
+        ("items_count", "integer"),
+        ("rules_count", "integer"),
+    ] {
+        let kind: Option<String> = parser.query_row(
+            "SELECT json_type(?1, ?2)",
+            params![content, format!("$.{field}")],
+            |r| r.get(0),
+        )?;
+        if kind.is_some_and(|k| k != expected) {
+            bail!("Invalid handoff field type");
+        }
+    }
+    let target: Option<String> =
+        parser.query_row("SELECT json_extract(?1, '$.target')", [content], |r| {
+            r.get(0)
+        })?;
+    if let Some(target) = target {
+        validate_text("Target label", &target, 128)?;
+    }
     for (field, count) in [("memories", "items_count"), ("rules", "rules_count")] {
         let length: i64 = parser.query_row(
             "SELECT json_array_length(?1, ?2)",
@@ -767,5 +799,111 @@ fn validate_bundle(parser: &Connection, content: &str) -> Result<()> {
             bail!("Handoff entries must be objects");
         }
     }
+    for (array, fields) in [
+        (
+            "memories",
+            vec![
+                ("kind", true, 64),
+                ("content", true, 1024 * 1024),
+                ("key", false, 128),
+                ("source", false, 4096),
+                ("actor", false, 4096),
+            ],
+        ),
+        (
+            "rules",
+            vec![
+                ("pattern", true, 4096),
+                ("reason", true, 16384),
+                ("policy", true, 64),
+            ],
+        ),
+    ] {
+        for (field, required, limit) in fields {
+            let mut stmt = parser.prepare(
+                "SELECT json_type(value, ?3), json_extract(value, ?3) FROM json_each(?1, ?2)",
+            )?;
+            let mut rows =
+                stmt.query(params![content, format!("$.{array}"), format!("$.{field}")])?;
+            while let Some(row) = rows.next()? {
+                let kind: Option<String> = row.get(0)?;
+                if !required && (kind.is_none() || kind.as_deref() == Some("null")) {
+                    continue;
+                }
+                if kind.as_deref() != Some("text") {
+                    bail!("Invalid handoff entry field type");
+                }
+                let value: String = row.get(1)?;
+                if field != "key" || !value.is_empty() {
+                    validate_text("Handoff entry field", &value, limit)?;
+                }
+            }
+        }
+    }
+    let invalid_id: bool = parser.query_row(
+        "SELECT EXISTS(SELECT 1 FROM json_each(?1, '$.memories')
+         WHERE json_type(value, '$.id') IS NOT NULL AND json_type(value, '$.id') != 'integer')",
+        [content],
+        |r| r.get(0),
+    )?;
+    if invalid_id {
+        bail!("Handoff record IDs must be integers when present");
+    }
+    let mut stmt = parser.prepare("SELECT json_extract(value, '$.kind'), json_extract(value, '$.key'), json_extract(value, '$.content') FROM json_each(?1, '$.memories')")?;
+    let mut keys = std::collections::HashMap::new();
+    let mut rows = stmt.query([content])?;
+    while let Some(row) = rows.next()? {
+        if !matches!(
+            normalized_kind(&row.get::<_, String>(0)?).as_str(),
+            "requirement" | "decision" | "note"
+        ) {
+            bail!("Invalid memory kind in bundle");
+        }
+        let key: Option<String> = row.get(1)?;
+        if let Some(key) = key.filter(|key| !key.is_empty()) {
+            let record = (
+                normalized_kind(&row.get::<_, String>(0)?),
+                row.get::<_, String>(2)?,
+            );
+            if keys
+                .insert(key, record.clone())
+                .is_some_and(|previous| previous != record)
+            {
+                bail!("Bundle contains internal key conflict: multiple entries share a key with differing content");
+            }
+        }
+    }
+    let mut stmt = parser.prepare("SELECT json_extract(value, '$.pattern'), json_extract(value, '$.policy'), json_extract(value, '$.reason') FROM json_each(?1, '$.rules')")?;
+    let mut patterns = std::collections::HashMap::new();
+    let mut rows = stmt.query([content])?;
+    while let Some(row) = rows.next()? {
+        paths::rule_matcher(&row.get::<_, String>(0)?)?;
+        if !matches!(
+            row.get::<_, String>(1)?
+                .trim()
+                .to_ascii_lowercase()
+                .as_str(),
+            "deny" | "ask" | "audit"
+        ) {
+            bail!("Invalid rule policy in handoff bundle; must be deny, ask, or audit");
+        }
+        let definition = (
+            row.get::<_, String>(1)?.trim().to_ascii_lowercase(),
+            row.get::<_, String>(2)?,
+        );
+        if patterns
+            .insert(row.get::<_, String>(0)?, definition.clone())
+            .is_some_and(|previous| previous != definition)
+        {
+            bail!("Bundle contains conflicting rule definitions for a pattern");
+        }
+    }
     Ok(())
+}
+
+fn normalized_kind(kind: &str) -> String {
+    match kind.to_ascii_lowercase().as_str() {
+        "intent" => "requirement".to_owned(),
+        kind => kind.to_owned(),
+    }
 }

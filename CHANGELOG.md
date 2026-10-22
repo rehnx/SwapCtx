@@ -3,6 +3,15 @@
 This file tracks user-facing changes. Entries below are **unreleased**; the
 `0.1.0` Cargo version does not establish a published release or tag.
 
+## Unreleased — handoff and audit reliability
+
+- Make handoff preview handle optional record IDs/counts and normalize imported
+  intent consistently with apply. Reject duplicate JSON members, malformed fields
+  and internal bundle conflicts in both commands. Count duplicate entries accurately.
+- Keep memory audit inventory and context simulation in one read snapshot; include
+  sensitive optional records in review counts/actions, handle missing provenance
+  and escape rule diagnostics safely in JSON and terminal output.
+
 ## Unified integration candidate
 
 - Integrate native CLI presentation and stabilized Codex hooks with intent,

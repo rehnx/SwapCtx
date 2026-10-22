@@ -192,7 +192,20 @@ fn sized(
 }
 
 pub fn packet(conn: &mut Connection, cwd: &Path, request: &Request) -> Result<String> {
-    if crate::storage::version(conn)? != 3 {
+    let tx = conn.transaction()?;
+    let output = packet_in_snapshot(&tx, cwd, request, crate::memory::now()?)?;
+    tx.commit()?;
+    Ok(output)
+}
+
+/// Caller owns a read transaction so counts and coverage use the same snapshot.
+pub(crate) fn packet_in_snapshot(
+    tx: &Connection,
+    cwd: &Path,
+    request: &Request,
+    timestamp: i64,
+) -> Result<String> {
+    if crate::storage::version(tx)? != 3 {
         bail!("Context requires schema 3; back up and run an explicit write command to migrate");
     }
     if request.protocol_version != 1
@@ -208,11 +221,9 @@ pub fn packet(conn: &mut Connection, cwd: &Path, request: &Request) -> Result<St
             bail!("Too many query terms");
         }
     }
-    let tx = conn.transaction()?; // One consistent snapshot for facts, counts and provenance.
-    crate::storage::diagnose(&tx)?;
-    let (project, root) = crate::storage::project(&tx, cwd)?;
+    crate::storage::diagnose(tx)?;
+    let (project, root) = crate::storage::project(tx, cwd)?;
     let root = crate::paths::path_text(&root)?;
-    let timestamp = crate::memory::now()?;
     let mut terms = request
         .query
         .as_ref()
@@ -362,7 +373,7 @@ pub fn packet(conn: &mut Connection, cwd: &Path, request: &Request) -> Result<St
     let mut selected = Vec::new();
     // Rules retain priority. Reserve future omission-counter widths before packing.
     while sized(
-        &tx,
+        tx,
         root,
         request,
         timestamp,
@@ -380,7 +391,7 @@ pub fn packet(conn: &mut Connection, cwd: &Path, request: &Request) -> Result<St
     }
     // An empty envelope is a lower bound for every subsequent packet (except the
     // one-byte false -> true coverage change). Quickly skip obvious non-fits.
-    let minimum = envelope(&tx, root, request, timestamp, &stats, (&[], &rules), 0)?
+    let minimum = envelope(tx, root, request, timestamp, &stats, (&[], &rules), 0)?
         .len()
         .saturating_sub(1);
     let mut payload_bytes = 0;
@@ -425,7 +436,7 @@ pub fn packet(conn: &mut Connection, cwd: &Path, request: &Request) -> Result<St
             review: candidate.stale || candidate.conflict || candidate.unknown,
         });
         let reserved_packet = sized(
-            &tx,
+            tx,
             root,
             request,
             timestamp,
@@ -441,10 +452,9 @@ pub fn packet(conn: &mut Connection, cwd: &Path, request: &Request) -> Result<St
         }
     }
     drop(encode);
-    let output = sized(&tx, root, request, timestamp, &stats, &selected, &rules)?;
+    let output = sized(tx, root, request, timestamp, &stats, &selected, &rules)?;
     if output.len() >= request.max_bytes as usize {
         bail!("Budget accounting failed");
     }
-    tx.commit()?;
     Ok(output)
 }

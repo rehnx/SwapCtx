@@ -1726,3 +1726,64 @@ fn handoff_same_key_different_kind_cannot_create_mandatory_conflicts() {
         .unwrap();
     assert_eq!(count, 1);
 }
+
+#[test]
+fn handoff_preview_accepts_optional_ids_and_normalizes_imported_kinds() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    s.run(
+        &["intent", "add", "Preserve interfaces", "--key", "compat"],
+        0,
+    );
+    let bundle = s._temp.path().join("normalized.json");
+    fs::write(&bundle, r#"{"protocol":"swapctx.handoff","version":1,"memories":[{"kind":"INTENT","content":"Preserve interfaces","key":"compat"}],"rules":[]}"#).unwrap();
+    let preview = stdout(s.run(&["handoff", "preview", bundle.to_str().unwrap()], 0));
+    assert!(preview.contains("[EXISTS:"));
+    assert!(!preview.contains("[CONFLICT:"));
+    let applied = stdout(s.run(&["handoff", "apply", bundle.to_str().unwrap()], 0));
+    assert!(applied.contains("Structurally matched (already present): 1"));
+}
+
+#[test]
+fn handoff_rejects_duplicate_json_members_and_invalid_field_types() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    let bundle = s._temp.path().join("ambiguous.json");
+    for content in [
+        r#"{"protocol":"swapctx.handoff","version":1,"memories":[],"memories":[],"rules":[]}"#,
+        r#"{"protocol":"swapctx.handoff","version":1,"memories":[{"kind":"note","content":"First","content":"Second"}],"rules":[]}"#,
+        r#"{"protocol":"swapctx.handoff","version":1,"target":[],"memories":[],"rules":[]}"#,
+        r#"{"protocol":"swapctx.handoff","version":1,"items_count":null,"memories":[],"rules":[]}"#,
+        r#"{"protocol":"swapctx.handoff","version":1,"memories":[{"kind":"note","content":42}],"rules":[]}"#,
+        r#"{"protocol":"swapctx.handoff","version":1,"memories":[{"kind":"unsupported","content":"text"}],"rules":[]}"#,
+        r#"{"protocol":"swapctx.handoff","version":1,"memories":[],"rules":[{"pattern":"[","reason":"test","policy":"deny"}]}"#,
+    ] {
+        fs::write(&bundle, content).unwrap();
+        s.run(&["handoff", "preview", bundle.to_str().unwrap()], 1);
+        s.run(&["handoff", "apply", bundle.to_str().unwrap()], 1);
+    }
+    assert_eq!(
+        s.db()
+            .query_row("SELECT count(*) FROM memories", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn handoff_preview_counts_entries_without_declared_counts_and_deduplicates() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    let bundle = s._temp.path().join("duplicates.json");
+    fs::write(&bundle, r#"{"protocol":"swapctx.handoff","version":1,"memories":[{"kind":"intent","content":"Preserve interfaces"},{"kind":"REQUIREMENT","content":"Preserve interfaces"}],"rules":[]}"#).unwrap();
+    let preview = stdout(s.run(&["handoff", "preview", bundle.to_str().unwrap()], 0));
+    assert!(preview.contains("Requirements: 2 approved entries"));
+    assert!(preview.contains("New records ready to import:                      1"));
+    assert!(preview.contains("Structurally identical records (already present): 1"));
+    let before = fs::read(s.data.join("swapctx.db")).unwrap();
+    s.run(&["handoff", "preview", bundle.to_str().unwrap()], 0);
+    assert_eq!(before, fs::read(s.data.join("swapctx.db")).unwrap());
+    let applied = stdout(s.run(&["handoff", "apply", bundle.to_str().unwrap()], 0));
+    assert!(applied.contains("Imported requirements & intent: 1"));
+    assert!(applied.contains("Structurally matched (already present): 1"));
+}

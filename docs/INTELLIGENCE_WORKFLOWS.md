@@ -24,6 +24,9 @@ invalidates a requirement while retaining history. Labels and origins are
 self-reported; they do not authenticate an architect or make a statement true.
 
 The read-only audit reports readiness, conflicts, expiry, provenance and omissions.
+Inventory and simulated context coverage share one read transaction and expiry
+timestamp. Sensitive optional records are included in review recommendations;
+missing origin rows produce a blocked diagnostic without repairing the store.
 Exit 0 means the diagnostic ran; read its readiness field rather than treating
 exit success as healthy memory. `READY` describes local memory prerequisites,
 not provider installation, hook loading or receipt. Optional stale notes can be
@@ -108,8 +111,11 @@ for complete history. Review the plaintext bundle before sharing. Heuristic
 filtering cannot guarantee absence of sensitive values.
 
 JSON handoff v1 accepts at most 16 MiB and 10,000 entries per array. Both arrays
-are required; duplicate keys, inconsistent declared counts and malformed shapes
-are rejected. Export syncs a temporary file and publishes without overwriting;
+are required; duplicate JSON members, inconsistent declared counts and malformed
+field types are rejected in both preview and apply. IDs and declared counts are
+optional; preview counts the actual arrays. Both paths normalize kinds without
+regard to ASCII case and treat intent as a requirement. Internal competing keys
+and rule definitions are rejected before target-store matching. Export syncs a temporary file and publishes without overwriting;
 the parent directory must exist. Apply validates fields and commits all records,
 origins, history and optional rules in one transaction. Competing keys and rule
 collisions refuse the entire apply; exact structural matches deduplicate.

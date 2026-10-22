@@ -545,3 +545,74 @@ fn audit_reports_legacy_schema_version_gracefully() {
     assert!(text.contains("Native context readiness: BLOCKED"));
     assert!(text.contains("Upgrade database schema to version 3"));
 }
+
+#[test]
+fn audit_json_escapes_control_characters_in_diagnostics() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    s.run(&["memory", "add", "--key", "multi\nline\tkey", "first"], 0);
+    s.run(&["memory", "add", "--key", "multi\nline\tkey", "second"], 0);
+    let json = stdout(s.run(&["memory", "audit", "--json"], 0));
+    assert!(s
+        .db()
+        .query_row("SELECT json_valid(?1)", [&json], |r| r.get::<_, bool>(0))
+        .unwrap());
+}
+
+#[test]
+fn audit_sensitive_optional_records_require_review_and_action() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    s.run(
+        &[
+            "memory",
+            "add",
+            "--allow-sensitive",
+            "api_key = AKIA1234567890123456",
+        ],
+        0,
+    );
+    let json = stdout(s.run(&["memory", "audit", "--json"], 0));
+    let (reviews, actions): (i64, String) = s.db().query_row(
+        "SELECT json_extract(?1, '$.quality.review_recommended'), json_extract(?1, '$.suggested_actions')",
+        [&json], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    assert_eq!(reviews, 1);
+    assert!(!actions.contains("No actions needed"));
+    assert!(!json.contains("AKIA1234567890123456"));
+}
+
+#[test]
+fn audit_missing_origin_reports_blocked_without_mutation() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    s.run(&["memory", "add", "ordinary note"], 0);
+    s.db().execute("DELETE FROM memory_origins", []).unwrap();
+    let before = fs::read(s.data.join("swapctx.db")).unwrap();
+    let json = stdout(s.run(&["memory", "audit", "--json"], 0));
+    let (readiness, unknown): (String, i64) = s.db().query_row(
+        "SELECT json_extract(?1, '$.readiness'), json_extract(?1, '$.quality.unknown_provenance')",
+        [&json], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    assert_eq!(readiness, "BLOCKED");
+    assert_eq!(unknown, 1);
+    assert_eq!(before, fs::read(s.data.join("swapctx.db")).unwrap());
+}
+
+#[test]
+fn audit_invalid_rule_diagnostics_are_valid_json_and_terminal_safe() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    s.db()
+        .execute(
+            "INSERT INTO rules(project_id, pattern, reason) VALUES(1, ?1, 'test')",
+            ["[\n\t\u{1b}bad"],
+        )
+        .unwrap();
+    let json = stdout(s.run(&["memory", "audit", "--json"], 0));
+    assert!(s
+        .db()
+        .query_row("SELECT json_valid(?1)", [&json], |r| r.get::<_, bool>(0))
+        .unwrap());
+    let text = stdout(s.run(&["memory", "audit"], 0));
+    assert!(!text.contains('\u{1b}'));
+    assert!(text.contains("BLOCKED"));
+}

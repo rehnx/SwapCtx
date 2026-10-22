@@ -574,6 +574,13 @@ struct ContextSim {
 }
 
 fn audit(conn: &mut Connection, project: i64, json: bool) -> Result<()> {
+    let tx = conn.transaction()?;
+    audit_snapshot(&tx, project, json)?;
+    tx.commit()?;
+    Ok(())
+}
+
+fn audit_snapshot(conn: &Connection, project: i64, json: bool) -> Result<()> {
     let version = storage::version(conn)?;
     let modern = version >= 2;
     let provenance = version >= 3;
@@ -734,14 +741,14 @@ fn audit(conn: &mut Connection, project: i64, json: bool) -> Result<()> {
     let mut unknown_provenance_records = Vec::new();
     if provenance {
         let mut stmt = conn.prepare(
-            "SELECT m.id, m.kind, d.memory_key, o.source, o.actor
+            "SELECT m.id, m.kind, d.memory_key, coalesce(o.source, 'legacy-unknown'), coalesce(o.actor, 'unknown')
              FROM memories m
              LEFT JOIN memory_metadata d ON d.memory_id = m.id
-             JOIN memory_origins o ON o.memory_id = m.id
+             LEFT JOIN memory_origins o ON o.memory_id = m.id
              WHERE m.project_id = ?1
                AND coalesce(d.state, 'active') = 'active'
                AND coalesce(d.validity, 'valid') = 'valid'
-               AND (o.source = 'legacy-unknown' OR o.actor = 'unknown')
+               AND (o.source IS NULL OR o.actor IS NULL OR o.source = 'legacy-unknown' OR o.actor = 'unknown')
              ORDER BY m.id ASC",
         )?;
         let mut rows = stmt.query(params![project])?;
@@ -771,7 +778,7 @@ fn audit(conn: &mut Connection, project: i64, json: bool) -> Result<()> {
     let mut sensitive_records = Vec::new();
     {
         let sql = if provenance {
-            "SELECT m.id, m.kind, m.content, m.created_at, d.memory_key, o.source, o.actor
+            "SELECT m.id, m.kind, m.content, m.created_at, d.memory_key, coalesce(o.source, 'legacy-unknown'), coalesce(o.actor, 'unknown')
              FROM memories m
              LEFT JOIN memory_metadata d ON d.memory_id = m.id
              LEFT JOIN memory_origins o ON o.memory_id = m.id
@@ -836,6 +843,9 @@ fn audit(conn: &mut Connection, project: i64, json: bool) -> Result<()> {
     for prov in &unknown_provenance_records {
         review_recommended_ids.insert(prov.id);
     }
+    for record in &sensitive_records {
+        review_recommended_ids.insert(record.id);
+    }
     let review_recommended_count = review_recommended_ids.len();
 
     let total_rules: i64 = conn.query_row(
@@ -867,16 +877,11 @@ fn audit(conn: &mut Connection, project: i64, json: bool) -> Result<()> {
     }
 
     let sim = if provenance {
-        let cwd = match std::env::current_dir().and_then(|p| p.canonicalize()) {
-            Ok(c) => c,
-            Err(_) => {
-                let root_str: String =
-                    conn.query_row("SELECT path FROM projects WHERE id=?1", [project], |r| {
-                        r.get(0)
-                    })?;
-                std::path::PathBuf::from(root_str)
-            }
-        };
+        let root_str: String =
+            conn.query_row("SELECT path FROM projects WHERE id=?1", [project], |r| {
+                r.get(0)
+            })?;
+        let cwd = std::path::PathBuf::from(root_str);
         let request = crate::context::Request {
             protocol_version: 1,
             query: None,
@@ -886,7 +891,7 @@ fn audit(conn: &mut Connection, project: i64, json: bool) -> Result<()> {
             include_conflicts: false,
             allow_unknown_provenance: false,
         };
-        match crate::context::packet(conn, &cwd, &request) {
+        match crate::context::packet_in_snapshot(conn, &cwd, &request, timestamp) {
             Ok(raw_json) => {
                 let bytes_used = raw_json.trim_end().len();
                 let (
@@ -967,7 +972,8 @@ fn audit(conn: &mut Connection, project: i64, json: bool) -> Result<()> {
         || conflicting_keys_count > 0
         || expired_count > 0
         || unknown_provenance_count > 0
-        || sensitive_count > 0;
+        || sensitive_count > 0
+        || !sensitive_rules.is_empty();
 
     let readiness = if is_blocked {
         "BLOCKED"
@@ -991,12 +997,15 @@ fn audit(conn: &mut Connection, project: i64, json: bool) -> Result<()> {
     }
     for (id, pattern, err) in &invalid_rules {
         suggestions.push(format!(
-            "Boundary rule #{id} with pattern '{pattern}' is invalid ({err}). Update or remove the rule."
+            "Boundary rule #{id} with pattern '{}' is invalid ({}). Update or remove the rule.",
+            sensitive::display(pattern, false),
+            sensitive::display(err, false)
         ));
     }
     for (id, pattern) in &sensitive_rules {
         suggestions.push(format!(
-            "Boundary rule #{id} with pattern '{pattern}' contains sensitive markers. Update the rule to remove secret text."
+            "Boundary rule #{id} with pattern '{}' contains sensitive markers. Update the rule to remove secret text.",
+            sensitive::display(pattern, false)
         ));
     }
     for conf in &conflicting_keys {
@@ -1029,9 +1038,9 @@ fn audit(conn: &mut Connection, project: i64, json: bool) -> Result<()> {
             sensitive::display(&prov.actor, false)
         ));
     }
-    for sens in sensitive_records.iter().filter(|r| r.is_requirement) {
+    for sens in &sensitive_records {
         suggestions.push(format!(
-            "Active requirement #{} contains sensitive secret markers and is excluded from native context. Supersede or re-add it without secret text.",
+            "Active record #{} contains sensitive secret markers and is excluded from native context. Supersede or re-add it without secret text.",
             sens.id
         ));
     }
@@ -1049,6 +1058,14 @@ fn audit(conn: &mut Connection, project: i64, json: bool) -> Result<()> {
             "Candidate scan limit (5000) reached. Archive or invalidate obsolete records to reduce active project memory size."
                 .into(),
         );
+    }
+    if sim.packet_err.is_some() {
+        suggestions.push("Context simulation failed. Run 'swapctx doctor' and resolve reported integrity or schema problems.".into());
+    } else if !sim.mandatory_complete
+        || sim.requirements_returned < active_valid_requirements
+        || sim.rules_returned < total_rules
+    {
+        suggestions.push("Mandatory context is incomplete at the 7168-byte budget. Review exclusions and use 'swapctx explain' before sharing context.".into());
     }
     if suggestions.is_empty() {
         if total_memories == 0 {
@@ -1122,7 +1139,7 @@ fn audit(conn: &mut Connection, project: i64, json: bool) -> Result<()> {
             "[{}]",
             suggestions
                 .iter()
-                .map(|s| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")))
+                .map(|s| format!("\"{}\"", crate::handoff::json_escape(s)))
                 .collect::<Vec<_>>()
                 .join(",")
         );
@@ -1130,7 +1147,7 @@ fn audit(conn: &mut Connection, project: i64, json: bool) -> Result<()> {
             "[{}]",
             exclusions
                 .iter()
-                .map(|s| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")))
+                .map(|s| format!("\"{}\"", crate::handoff::json_escape(s)))
                 .collect::<Vec<_>>()
                 .join(",")
         );
