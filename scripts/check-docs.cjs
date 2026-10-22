@@ -81,6 +81,7 @@ let syntax='not_run_non_windows',commands=[];
 if(process.platform==='win32') {
   const ps=path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe');
   const script=String.raw`
+$ProgressPreference='SilentlyContinue'
 [Console]::InputEncoding=[Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $blocks=[Console]::In.ReadToEnd() | ConvertFrom-Json
@@ -103,8 +104,12 @@ foreach($block in $blocks) {
 ConvertTo-Json -InputObject @($commands.ToArray()) -Depth 5 -Compress
 `;
   const result=spawnSync(ps,['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{
-    input:JSON.stringify(blocks.filter(b=>b.language==='powershell')),encoding:'utf8',timeout:15000,maxBuffer:131072,
+    // Windows PowerShell's first-use module startup can exceed 15 seconds on
+    // hosted runners. This only parses our bounded, reviewed documentation;
+    // provider/CLI execution timeouts below remain separate.
+    input:JSON.stringify(blocks.filter(b=>b.language==='powershell')),encoding:'utf8',timeout:60000,maxBuffer:131072,
   });
+  assert.ifError(result.error);
   assert.equal(result.status,0,result.stderr);commands=JSON.parse(result.stdout.replace(/^\uFEFF/,''));syntax='passed';
 }
 
