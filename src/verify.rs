@@ -252,9 +252,10 @@ pub fn run(
     // 4. Sensitive Credential & Secret Check (Active Memories)
     if secret_passed {
         let mut mem_stmt = conn.prepare(
-            "SELECT m.id, m.content, m.kind
+            "SELECT m.id, m.content, m.kind, coalesce(d.memory_key, ''), o.source, o.actor
              FROM memories m
              LEFT JOIN memory_metadata d ON d.memory_id = m.id
+             JOIN memory_origins o ON o.memory_id = m.id
              WHERE m.project_id = ?1 AND coalesce(d.state, 'active') = 'active' AND coalesce(d.validity, 'valid') = 'valid'",
         )?;
         let mut mem_rows = mem_stmt.query([project])?;
@@ -262,7 +263,12 @@ pub fn run(
             let id: i64 = r.get(0)?;
             let content: String = r.get(1)?;
             let kind: String = r.get(2)?;
-            if sensitive::guard(&content, false).is_err() || sensitive::guard(&kind, false).is_err()
+            let key: String = r.get(3)?;
+            let source: String = r.get(4)?;
+            let actor: String = r.get(5)?;
+            if [&content, &kind, &key, &source, &actor]
+                .iter()
+                .any(|value| sensitive::detected(value))
             {
                 secret_passed = false;
                 secret_detail = format!("Active memory #{id} contains secret-like credentials");
@@ -283,11 +289,23 @@ pub fn run(
         detail: secret_detail,
     });
 
-    let all_passed = checks.iter().all(|c| c.passed);
+    let mut all_passed = checks.iter().all(|c| c.passed);
 
     // Attestation fingerprint computation (Deterministic Canonical State Fingerprint)
     let attestation_hash = if options.attest || options.json {
-        compute_canonical_state_fingerprint(conn, project, root, all_passed, &checks)?
+        match compute_canonical_state_fingerprint(conn, project, root, all_passed, &checks) {
+            Ok(hash) => hash,
+            Err(_) => {
+                all_passed = false;
+                checks.push(CheckResult {
+                    name: "State Fingerprint",
+                    passed: false,
+                    detail: "Complete fingerprint evidence unavailable; no attestation issued"
+                        .into(),
+                });
+                String::new()
+            }
+        }
     } else {
         String::new()
     };

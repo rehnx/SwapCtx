@@ -391,7 +391,12 @@ fn render_text(
         );
     }
 
-    if violations > 0 {
+    if changes
+        .iter()
+        .any(|change| change.sensitive_scan == SensitiveScanResult::Detected)
+    {
+        println!("Inspection Result: FAIL (sensitive patterns detected; review credentials and boundary matches above)");
+    } else if violations > 0 {
         println!(
             "Inspection Result: VIOLATIONS DETECTED ({} deny policies breached)",
             violations
@@ -471,7 +476,13 @@ fn render_json(
         )",
         rusqlite::params![
             verdict,
-            if has_deny { 1 } else { 0 },
+            changes
+                .iter()
+                .filter(|change| change
+                    .matched_rules
+                    .iter()
+                    .any(|rule| rule.policy.eq_ignore_ascii_case("deny")))
+                .count() as i64,
             if has_sensitive { "true" } else { "false" },
             files_str
         ],

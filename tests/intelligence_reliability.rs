@@ -141,6 +141,45 @@ fn staged_credentials_cannot_be_hidden_by_later_worktree_edits() {
 }
 
 #[test]
+fn verification_json_preserves_failed_checks_when_git_evidence_is_unavailable() {
+    let s = Sandbox::new_non_git();
+    s.run(&["init"], 0);
+    let json = stdout(s.run(&["verify", "--json"], 1));
+    let (passed, fingerprint): (bool, String) = s
+        .db()
+        .query_row(
+            "SELECT json_extract(?1, '$.all_passed'), json_extract(?1, '$.attestation')",
+            [&json],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert!(!passed);
+    assert!(fingerprint.is_empty());
+    assert!(json.contains("State Fingerprint"));
+    assert!(json.contains("Boundary Policies"));
+}
+
+#[test]
+fn verification_detects_secret_markers_in_optional_memory_provenance() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    s.run(
+        &[
+            "memory",
+            "add",
+            "ordinary optional note",
+            "--source",
+            "api_key = AKIA1234567890123456",
+            "--allow-sensitive",
+        ],
+        0,
+    );
+    let json = stdout(s.run(&["verify", "--json"], 1));
+    assert!(json.contains("Active memory #1 contains secret-like credentials"));
+    assert!(!json.contains("AKIA1234567890123456"));
+}
+
+#[test]
 fn nested_git_project_inspection_and_fingerprint_exclude_sibling_changes() {
     let s = Sandbox::new();
     let nested = s.project.join("nested");
@@ -1632,4 +1671,58 @@ fn regression_sensitive_key_conflicts_remain_redacted_with_override() {
         .query_row("SELECT count(*) FROM memories", [], |r| r.get(0))
         .unwrap();
     assert_eq!(count, 0);
+}
+
+#[test]
+fn inspection_text_reports_secrets_as_failure_and_json_counts_denied_files() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    fs::write(s.project.join("one.txt"), "api_key = AKIA1234567890123456").unwrap();
+    let text = stdout(s.run(&["inspect"], 1));
+    assert!(text.contains("Inspection Result: FAIL"));
+    assert!(!text.contains("Inspection Result: PASS"));
+    assert!(!text.contains("AKIA1234567890123456"));
+    fs::write(s.project.join("two.txt"), "ordinary data").unwrap();
+    s.run(
+        &["protect", "add", "--path", "*.txt", "--reason", "review"],
+        0,
+    );
+    let json = stdout(s.run(&["inspect", "--json"], 1));
+    let count: i64 = s
+        .db()
+        .query_row(
+            "SELECT json_extract(?1, '$.violations_count')",
+            [json],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 2);
+}
+
+#[test]
+fn handoff_same_key_different_kind_cannot_create_mandatory_conflicts() {
+    let s = Sandbox::new();
+    s.run(&["init"], 0);
+    s.run(
+        &[
+            "memory",
+            "add",
+            "--kind",
+            "note",
+            "--key",
+            "shared",
+            "Same wording",
+        ],
+        0,
+    );
+    let bundle = s._temp.path().join("kind-conflict.json");
+    fs::write(&bundle, r#"{"protocol":"swapctx.handoff","version":1,"memories":[{"id":1,"kind":"requirement","content":"Same wording","key":"shared"}],"rules":[]}"#).unwrap();
+    let preview = stdout(s.run(&["handoff", "preview", bundle.to_str().unwrap()], 0));
+    assert!(preview.contains("[CONFLICT:"));
+    s.run(&["handoff", "apply", bundle.to_str().unwrap()], 1);
+    let count: i64 = s
+        .db()
+        .query_row("SELECT count(*) FROM memories", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 1);
 }

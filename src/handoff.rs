@@ -343,8 +343,8 @@ fn preview(conn: &Connection, project: i64, source: &Path) -> Result<()> {
                  WHERE m.project_id = ?1 AND d.memory_key = ?2
                    AND coalesce(d.state, 'active') = 'active'
                    AND coalesce(d.validity, 'valid') = 'valid'
-                   AND m.content != ?3",
-                params![project, k, text],
+                   AND (m.content != ?3 OR m.kind != ?4 COLLATE NOCASE)",
+                params![project, k, text, kind],
                 |r| r.get(0),
             )
             .optional()?
@@ -540,13 +540,13 @@ fn apply(conn: &mut Connection, project: i64, source: &Path, allow_sensitive: bo
         // Check for duplicate competing keys inside the bundle itself
         if let Some(k) = clean_key {
             if let Some(prev_text) = seen_bundle_keys.get(k) {
-                if prev_text != &text {
+                if prev_text != &(kind.clone(), text.clone()) {
                     bail!(
                         "Bundle contains internal key conflict: multiple entries share a key with differing content"
                     );
                 }
             } else {
-                seen_bundle_keys.insert(k.to_string(), text.clone());
+                seen_bundle_keys.insert(k.to_string(), (kind.clone(), text.clone()));
             }
         }
 
@@ -573,9 +573,9 @@ fn apply(conn: &mut Connection, project: i64, source: &Path, allow_sensitive: bo
                      WHERE m.project_id = ?1 AND d.memory_key = ?2
                        AND coalesce(d.state, 'active') = 'active'
                        AND coalesce(d.validity, 'valid') = 'valid'
-                       AND m.content != ?3
+                       AND (m.content != ?3 OR m.kind != ?4 COLLATE NOCASE)
                      LIMIT 1",
-                    params![project, k, text],
+                    params![project, k, text, kind],
                     |cr| cr.get(0),
                 )
                 .optional()?;
