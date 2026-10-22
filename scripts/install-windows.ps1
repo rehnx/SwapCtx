@@ -99,7 +99,7 @@ try {
         $taskReader = [IO.StreamReader]::new($taskManifestEntry.Open(),[Text.UTF8Encoding]::new($false,$true))
         try { $taskManifestText = $taskReader.ReadToEnd() } finally { $taskReader.Dispose() }
         $taskManifest = $taskManifestText | ConvertFrom-Json
-        if ($taskManifest.format_version -ne 1 -or $taskManifest.name -cne 'swapctx' -or $taskManifest.target -cne 'x86_64-pc-windows-msvc' -or $taskManifest.license -cne 'Apache-2.0' -or $taskManifest.version -cnotmatch '^\d+\.\d+\.\d+$') { throw 'Unsupported package manifest' }
+        if ($taskManifest.format_version -ne 1 -or $taskManifest.name -cne 'swapctx' -or $taskManifest.target -cne 'x86_64-pc-windows-msvc' -or $taskManifest.license -cne 'Apache-2.0' -or $taskManifest.version -isnot [string] -or $taskManifest.version -cnotmatch '\A[0-9]+\.[0-9]+\.[0-9]+(?:-preview)?\z') { throw 'Unsupported package manifest' }
         if ($taskManifest.files -isnot [Array] -or $taskManifest.files.Count -ne $taskNames.Count) { throw 'Incomplete manifest' }
         $taskSeen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
         foreach ($taskFile in $taskManifest.files) {

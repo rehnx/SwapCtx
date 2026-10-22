@@ -69,7 +69,7 @@ if (!(Test-Path -LiteralPath $taskParent -PathType Container)) { throw 'Destinat
 $taskParent = Resolve-ReleaseDirectory $taskParent
 $taskOutput = [IO.Path]::Combine($taskParent,[IO.Path]::GetFileName($taskOutput))
 if (Get-Item -LiteralPath $taskOutput -Force -ErrorAction SilentlyContinue) { throw 'Destination already exists; nothing was overwritten' }
-$taskVersion = [regex]::Match((Get-Content -LiteralPath (Join-Path $taskRoot 'Cargo.toml') -Raw), '(?m)^version = "([0-9]+\.[0-9]+\.[0-9]+)"').Groups[1].Value
+$taskVersion = [regex]::Match((Get-Content -LiteralPath (Join-Path $taskRoot 'Cargo.toml') -Raw), '(?m)^version = "([0-9]+\.[0-9]+\.[0-9]+(?:-preview)?)"').Groups[1].Value
 if (!$taskVersion) { throw 'Cannot determine package version' }
 $taskInputs = [ordered]@{
     'swapctx.exe' = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Binary)

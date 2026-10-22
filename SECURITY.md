@@ -10,6 +10,9 @@ Current review evidence is in [Phase 10](docs/PHASE10_PRODUCTION_HARDENING.md) a
 **A private reporting channel is a pending maintainer release decision.** This
 checkout cannot establish whether GitHub private vulnerability reporting is
 enabled. No private email address or response-time commitment is advertised.
+GitHub documents this reporting feature for public repositories; a private
+repository's 404 cannot establish its future state. The
+[owner checklist](docs/OWNER_LAUNCH_CHECKLIST.md) defines verified intake setup.
 
 If the repository's **Security** tab offers **Report a vulnerability**, use that
 private GitHub form. Otherwise, request a private contact method from the

@@ -15,7 +15,7 @@ adapter is offline-tested only, with native receipt/adherence unverified. See
 `docs/PHASE8_NATIVE_PROVIDERS.md` in the source repository for native setup and
 limitations. No provider is bundled or authenticated by SwapCtx.
 
-Before extraction, compare `Get-FileHash .\swapctx-0.1.0-windows-x64.zip -Algorithm SHA256`
+Before extraction, compare `Get-FileHash .\swapctx-0.1.0-preview-windows-x64.zip -Algorithm SHA256`
 with SHA256SUMS.txt from your trusted distribution channel. Inside the ZIP,
 manifest.json lists SHA-256 hashes and lengths for each payload file. These are
 corruption checks, not a digital signature or proof of publisher identity.
@@ -28,9 +28,9 @@ own checksum against that channel before running it. For example:
 ```powershell
 Get-FileHash .\install-windows.ps1 -Algorithm SHA256
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-windows.ps1 `
-  -Archive .\swapctx-0.1.0-windows-x64.zip `
+  -Archive .\swapctx-0.1.0-preview-windows-x64.zip `
   -ExpectedSha256 'REPLACE_WITH_THE_64_HEX_DIGIT_ZIP_HASH' `
-  -Destination 'C:\Users\YourName\Tools\SwapCtx-0.1.0'
+  -Destination 'C:\Users\YourName\Tools\SwapCtx-0.1.0-preview'
 ```
 
 The parent directory must exist and the destination must be new. The script
@@ -60,7 +60,7 @@ Set-Location 'C:\Projects\YourProject'
 To use the bare command from any project in your current PowerShell session:
 
 ```powershell
-$InstallDirectory = 'C:\Users\YourName\Tools\SwapCtx-0.1.0'
+$InstallDirectory = 'C:\Users\YourName\Tools\SwapCtx-0.1.0-preview'
 $env:PATH = "$InstallDirectory;$env:PATH"
 Get-Command swapctx -CommandType Application
 swapctx --version
@@ -94,7 +94,7 @@ parents; the report must be outside the disposable work directory.
 ```powershell
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
   -File .\test-windows-preview.ps1 `
-  -Archive .\swapctx-0.1.0-windows-x64.zip -ExpectedSha256 'ZIP_HASH' `
+  -Archive .\swapctx-0.1.0-preview-windows-x64.zip -ExpectedSha256 'ZIP_HASH' `
   -Installer .\install-windows.ps1 -InstallerSha256 'INSTALLER_HASH' `
   -WorkDirectory "$env:TEMP\SwapCtx-preview-work" `
   -Report "$env:USERPROFILE\Desktop\SwapCtx-preview-report.json"
