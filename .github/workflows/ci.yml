@@ -99,7 +99,7 @@ jobs:
   windows-preview:
     # Runs the full offline gate internally; schedule independently of matrix results.
     # Merging still requires matrix, security, producer and recipient checks.
-    # Retention below is private-only; no public distribution or release.
+    # Public candidate retention requires an explicit dispatch on main; no release is created.
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -122,18 +122,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Windows preview producer failed' }
           Get-Content .build/ci-preview/release-checks.json
           Get-Content .build/ci-preview/windows-acceptance.json
-      - name: Retain exact verified candidate for private release review
-        if: ${{ github.event.repository.private }}
+      - name: Retain exact verified candidate for release review
+        if: ${{ github.event.repository.private || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: swapctx-windows-preview-${{ github.event.pull_request.head.sha || github.sha }}
           path: .build/ci-preview/
           if-no-files-found: error
           retention-days: 7
-      # Public repositories never upload candidates through this workflow.
+      # Public pull requests and push runs never upload candidates through this workflow.
   windows-recipient:
     needs: windows-preview
-    if: ${{ github.event.repository.private }}
+    if: ${{ github.event.repository.private || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
     runs-on: windows-2022
     timeout-minutes: 10
     steps:
@@ -166,7 +166,7 @@ jobs:
           & $taskPS -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $taskCandidate 'test-windows-preview.ps1') -Archive $taskArchives[0].FullName -ExpectedSha256 $taskHashes[$taskArchives[0].Name] -Installer (Join-Path $taskCandidate 'install-windows.ps1') -InstallerSha256 $taskHashes['install-windows.ps1'] -WorkDirectory (Join-Path $env:RUNNER_TEMP 'recipient-work') -Report (Join-Path $env:RUNNER_TEMP 'independent-windows-acceptance.json')
           if ($LASTEXITCODE -ne 0) { throw 'Separate-host recipient acceptance failed' }
           Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'independent-windows-acceptance.json')
-      - name: Retain separate-host acceptance evidence privately
+      - name: Retain separate-host acceptance evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-recipient-${{ github.event.pull_request.head.sha || github.sha }}

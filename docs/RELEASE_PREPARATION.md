@@ -122,6 +122,31 @@ Before any public distribution, the maintainer must review:
 - Native integration labeling: offline contracts are tested; actual provider
   compatibility, callback scheduling, receipt and adherence remain unverified.
 
+## Public manual candidate and independent recipient
+
+For an owner-authorized public preview, manually dispatch **Foundation checks**
+(`ci.yml`) on `main` after all intended changes are merged. Record the dispatch
+run's exact `head_sha` and verify it matches the frozen release revision. A public
+push or PR runs validation without retaining a candidate; only an explicit manual
+run on `main` enables candidate retention and the separate Windows 2022 recipient.
+The existing private-repository behavior is preserved.
+
+The Windows producer uses `prepare-preview.ps1` unchanged. After its complete gate
+passes, the workflow retains only `.build/ci-preview/`, with the source SHA in the
+artifact name and seven-day retention. The separate recipient downloads those
+original files with artifact-digest verification, verifies every recorded checksum,
+and runs `test-windows-preview.ps1` on the exact ZIP and installer. Its own report
+is retained separately. Verify all Foundation jobs for that same SHA; a manual
+run or retained file alone does not establish successful final verification.
+
+These Actions artifacts are accessible according to the public repository's
+artifact permissions. They contain only the candidate and synthetic acceptance
+evidence, never the workspace, user stores or credentials. No release, tag, asset
+upload to a release, or publication is performed by this workflow. Preserve the
+original bytes and receipts, inspect their contents before distribution, and
+verify downloaded hashes. Separate hosted-VM acceptance does not establish clean
+personal-hardware acceptance or cross-toolchain byte reproducibility.
+
 ## Private hosted candidate retention
 
 The manual `windows-preview.yml` workflow can retain its fully tested output for
