@@ -1,7 +1,7 @@
 {
   "format_version": 1,
   "target": "x86_64-pc-windows-msvc",
-  "lock_sha256": "4c986d2308585f18e92302b4b524de5312a009c3d6af752bedf9d55fddb86a33",
+  "lock_sha256": "37286f8cd2c7084417dcc7f88f217b3be4f948c5573c5b8d9f00bee1091ee1e9",
   "packages": [
     {
       "name": "aho-corasick",

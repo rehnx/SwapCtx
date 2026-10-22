@@ -55,7 +55,7 @@ Reading branch-protection and Actions-permission settings returned HTTP 403;
 private-vulnerability-reporting inspection returned 404, which does not establish
 its state. Repository description/topics updates also returned 403. No repository
 security, permission or visibility settings were changed. Do not infer verified
-private intake from these responses.
+private intake from these responses. The owner checklist accounts for GitHub private reporting being documented for public repositories.
 
 ## Final release procedure
 
@@ -72,3 +72,5 @@ private intake from these responses.
 ## Founder handoff
 
 Follow the [owner launch checklist](OWNER_LAUNCH_CHECKLIST.md) for private security intake, exact independent Windows acceptance, and the approval boundary. Native Codex/Claude compatibility remains experimental; live verification is not part of this preview gate.
+
+The [Windows comparison investigation](WINDOWS_REPRODUCIBILITY.md) records measured native toolchain and binary differences without claiming a retrospective cause for unavailable binaries.

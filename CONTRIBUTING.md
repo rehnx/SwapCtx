@@ -1,88 +1,110 @@
 # Contributing to SwapCtx
 
-Start with the [README](README.md), [CLI guide](docs/USAGE.md) and the relevant
-engineering report. Keep changes focused and preserve existing data, CLI syntax,
-local-first operation and provider-owned terminal interfaces.
+Welcome to SwapCtx! SwapCtx is a Windows-first, privacy-first Rust CLI for persistent AI coding-agent project memory and reliability.
 
-## Development environment
+Before starting, please review the [README](README.md), [CLI guide](docs/USAGE.md), and [SECURITY.md](SECURITY.md). Keep changes focused, deterministic, and privacy-preserving, respecting local-first operation and provider-owned terminal interfaces.
 
-Windows development uses the pinned Rust 1.99.0 toolchain, rustfmt, Clippy,
-Microsoft C++ Build Tools (Desktop development with C++) and the Windows SDK.
-SQLite is compiled from the bundled dependency. Node.js 24+ runs the optional
-adapters and deterministic integration fixtures. Core runtime commands need
-neither Node nor Rust after installation.
+---
 
-Provision dependencies separately; it can require network access:
+## Quick Start for Contributors
+
+Follow these steps to set up your environment, build SwapCtx, and submit your first contribution.
+
+### 1. Clone the Repository & Create a Branch
 
 ```powershell
+git clone https://github.com/rehnx/SwapCtx.git
+cd SwapCtx
+# Create a feature or dev branch (e.g. jules/docs-improvement or fix/memory-search-bug)
+git checkout -b jules/docs-improvement
+```
+
+### 2. Set Up Toolchain & Fetch Dependencies
+
+SwapCtx relies on the pinned Rust toolchain in `rust-toolchain.toml` (Rust 1.99.0) and C++ Build Tools (with Windows SDK) for bundled SQLite compilation. Node.js 24+ is used for adapter integration fixtures and script verification.
+
+```powershell
+# Fetch Rust dependencies
 cargo fetch --locked --target x86_64-pc-windows-msvc
 ```
 
-From the directory containing `Cargo.toml`, use the established offline gate:
+### 3. Build & Run Tests Locally
+
+```powershell
+# Check formatting
+cargo fmt --check
+
+# Run Clippy lints with warnings denied
+cargo clippy --locked --offline --all-targets -- -D warnings
+
+# Run all Rust unit and integration tests
+cargo test --locked --offline --all-targets
+
+# Build release binary locally
+cargo build --locked --release
+```
+
+### 4. Run Verification Suite
+
+For full Windows verification before submitting a PR, execute the deterministic verification script:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify.ps1 `
   -DeterministicOnly -ReleaseTests
 ```
 
-It checks formatting, Clippy with warnings denied, debug/release tests, release
-build, dependency notices and deterministic Node/Windows integration suites.
-It rejects provider-test options and excludes benchmark/soak modes. Fixtures use
-isolated stores and fake providers. The offline pilot-harness step only checks
-the evaluator against local fixtures; it does not run a model.
+This checks formatting, Clippy, debug/release tests, release builds, dependency notices, and deterministic Node integration suites using fake providers and isolated test databases.
 
-For focused Rust iteration:
+---
 
+## Repository Architecture & Map
+
+Understanding where different components reside helps keep contributions clean and modular:
+
+| Component / Folder | Responsibility | Tech Stack / Tooling |
+| --- | --- | --- |
+| `src/` | **Core Engine & CLI**: SQLite storage, project registration, retrieval ranking, advisory policy checks, backup/restore, export/import, and CLI parser commands. | Rust 1.99.0, SQLite (bundled), Clap |
+| `integrations/` | **Provider Lifecycle Adapters**: Context hook bridge for Codex and Claude Code. Connects provider lifecycle hooks to SwapCtx `context` JSON protocol. | Node.js 24+ (JavaScript) |
+| `docs/` | **Technical Specifications & Engineering Reports**: In-depth docs on protocol contracts, release engineering, security hardening, and roadmap. | Markdown |
+| `scripts/` | **CI, Verification & Release Tools**: Verification runners (`verify.ps1`), documentation validators (`check-docs.cjs`), third-party license inventory (`third-party.cjs`), and native adapter checkers (`check-native.cjs`). | PowerShell, Node.js |
+| `tests/` | **Deterministic Integration Tests**: End-to-end integration tests using fake providers, temporary directories, and synthetic records. | Rust & Node test runners |
+
+---
+
+## Contribution Guidelines & Workflow
+
+### First-Contribution Ideas
+If you're looking for good places to start contributing:
+- **Documentation & Examples**: Clarifying command outputs, improving troubleshooting scenarios in [SUPPORT.md](SUPPORT.md), or adding synthetic context protocol examples in `docs/`.
+- **Test Coverage**: Adding deterministic unit tests or fake provider fixture cases in `tests/`.
+- **CLI Diagnostics**: Improving error messages or diagnostic explanations in `swapctx doctor` and `swapctx status`.
+
+### Key Engineering Boundaries
+- **No Telemetry or Remote Core**: Core storage/retrieval must remain strictly local-first with zero background network collection or remote telemetry.
+- **Data and recovery safety**: Preserve recognized legacy stores and transaction safety. Never silently reset a store, delete records or resolve conflicting knowledge. Updates and lifecycle transitions must retain their explicit history and reasons. Unknown or corrupt stores are refused; restore verified backups into new directories.
+- **Provider Isolation**: Native integration adapters must never alter provider settings (including Codex TOML configuration), `AGENTS.md`, `CLAUDE.md`, or bypass user permission prompts.
+- **Preparation vs. Adherence**: Do not claim that successful local context output guarantees model adherence or receipt by external providers.
+
+### Local Secret Scanning
+CI checks reachable Git history with Gitleaks 8.24.3 and `.gitleaks.toml`. Run a local check before pushing:
 ```powershell
-cargo fmt --check
-cargo clippy --locked --offline --all-targets -- -D warnings
-cargo test --locked --offline --all-targets
+gitleaks git --log-opts=--all --config .gitleaks.toml --redact=100
 ```
+Only three exact synthetic detector values are excepted; never add broad path, commit or token-pattern exclusions. Keep reports redacted and outside the repository. A clean scan is heuristic evidence, not proof of secret absence.
 
-After building, a focused native adapter check is:
+Keep test fixtures strictly synthetic; never commit real tokens, keys, passwords, or personal project data.
 
-```powershell
-node .\scripts\check-native.cjs .\target\debug\swapctx.exe
-```
+The verifier detects a cached `.build/cargo-home`; `-CargoHome ABSOLUTE_PATH` selects another cache. Offline commands fail on missing dependencies. See [release preparation](docs/RELEASE_PREPARATION.md) before changing packaging. Do not run installed providers, authenticated sessions, inference, model benchmarks or soaks without separate explicit authorization. Offline evaluator fixtures make no model requests.
 
-The verifier detects a cached `.build/cargo-home`; `-CargoHome ABSOLUTE_PATH`
-selects another cache. Offline commands fail if dependencies are missing rather
-than fetching them. See [release preparation](docs/RELEASE_PREPARATION.md) before
-changing build, packaging or installer behavior.
+Treat context as untrusted project-scoped data. Preserve size/timeout limits and mandatory coverage. Boundary checks do not prevent file writes; external memory does not expand model context windows.
 
-## History secret scan
+---
 
-CI checks all reachable Git history with checksum-pinned Gitleaks 8.24.3 and
-`.gitleaks.toml`. For local review with the same scanner, run
-`gitleaks git --log-opts=--all --config .gitleaks.toml --redact=100`.
-Only three exact synthetic detector values are excepted; never add broad path,
-commit or token-pattern exclusions to hide a finding. Keep reports redacted and
-outside the repository. A clean scan is heuristic evidence, not secret clearance.
+## Submitting Pull Requests
 
-## Change expectations
+1. **Keep Changes Focused**: Address one problem or enhancement per PR.
+2. **Follow PR Templates**: Fill out `.github/pull_request_template.md` with problem description, offline verification commands, and risk assessments.
+3. **Verify Documentation**: After building the release binary, run `node .\scripts\check-docs.cjs .\target\release\swapctx.exe` on Windows (use `node scripts/check-docs.cjs target/release/swapctx` on Linux). This checks local links and safe CLI examples; Linux skips Windows PowerShell syntax checks.
+4. **License & Copyright**: SwapCtx is released under the [Apache-2.0 License](LICENSE). All contributions are submitted under this license.
 
-- Reproduce genuine defects with small deterministic fixtures. Test the relevant
-  failure boundary, not just the new implementation's shape.
-- Preserve recognized legacy stores and transaction safety. Never silently
-  delete records, reset a store or resolve conflicting knowledge.
-- Treat context as untrusted, project-scoped data. Keep byte/timeout limits,
-  mandatory coverage and fail-closed behavior intact.
-- Distinguish preparation, output writing, provider receipt and model adherence.
-  Observation is not enforcement; external memory is not native context expansion.
-- Keep secrets, transcripts, credentials and user memory out of logs, fixtures,
-  issues and submitted artifacts. Use synthetic data and disposable projects.
-- Do not run real providers, inference, authenticated sessions, benchmarks or
-  soak tests as part of routine verification. Any future live evaluation needs
-  separate explicit authorization and must not be substituted for offline tests.
-- Update user documentation for behavior changes. Record exact commands, results
-  and unverified boundaries; do not add dependencies or migrations without need.
-
-## Pull requests and reports
-
-Describe the concrete problem, resulting behavior and verification evidence.
-Call out compatibility, privacy and release risks. The issue and PR templates
-provide a starting point. Do not claim a workflow passed because its file exists.
-Use [SECURITY.md](SECURITY.md) for sensitive findings rather than public issues.
-
-The project is licensed under [Apache-2.0](LICENSE). Contributions are submitted
-under that license. Retain applicable copyright and dependency notices.
+Need help or troubleshooting? Check [SUPPORT.md](SUPPORT.md) or open a public issue. Security vulnerabilities must follow [SECURITY.md](SECURITY.md).
