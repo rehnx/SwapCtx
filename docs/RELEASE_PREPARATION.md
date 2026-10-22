@@ -141,3 +141,23 @@ public download or publish it as a release without founder approval.
 Follow the authorization granted for the current task when dispatching builds or
 pushing source. Tags, visibility changes, external distribution, package submissions
 and public releases remain separate launch actions; this procedure grants none.
+
+## Manually retained public-repository candidate
+
+The manual **Windows preview preparation (manual, no publication)** workflow can
+retain an unsigned candidate from `main` when `retain_candidate` is explicitly
+selected. Default runs retain nothing. Public pull requests do not trigger this
+workflow. Its read-only repository token cannot create a GitHub release.
+
+After all final-main checks pass, dispatch this workflow on `main` with retention
+enabled. Record the run's exact `head_sha`; moving `main` later does not change
+that run's source identity. The producer retains its original seven candidate
+files for seven days. A separate Windows 2022 job downloads the same artifact,
+verifies every checksum and writes a separate acceptance report. Preserve both
+artifacts before they expire. Hosted recipient acceptance does not certify clean
+personal hardware or establish cross-toolchain binary reproducibility.
+
+Review the producer and recipient jobs before using any retained candidate.
+Publication remains a separate action against the existing release draft, using
+only the exact verified files and source SHA. See the
+[current session review](OPEN_SOURCE_RELEASE_REVIEW.md) for execution limitations.

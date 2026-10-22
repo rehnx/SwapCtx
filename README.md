@@ -20,11 +20,14 @@ you want to keep, retrieve a scoped context packet, and optionally make it
 available through native provider lifecycle hooks. It provides **external
 memory**, not a larger model context window or guaranteed instruction adherence.
 
-> **Preview preparation — public release not yet approved:** Local offline memory storage, CLI context retrieval, transactional database safety, and adapter hook outputs are verified deterministically with fake providers and synthetic events. Actual receipt by live native AI agents and model adherence remain unverified experimental integrations. The build badge links to CI workflow runs and is not local test evidence.
+> **Preview:** SwapCtx is open-source under Apache-2.0. The Windows binary
+> release is still in preparation; no downloadable package is claimed here.
+> The preview is unsigned. Core and adapter contracts have deterministic tests. Live native provider
+> receipt and model adherence remain experimental and unverified.
 
 ---
 
-## Your terminal. Your provider.
+## Native provider workflows (experimental)
 
 Run `swapctx` to choose a provider. This static excerpt shows SwapCtx's own menu;
 it is not a recording of an authenticated provider session.
@@ -61,7 +64,7 @@ or incomplete context fails closed. See [native setup and limits](docs/PHASE8_NA
 
 ---
 
-## Key Capabilities
+## Features
 
 Long conversations, compaction and new sessions can leave useful constraints
 outside an agent's current input. SwapCtx stores deliberately saved knowledge
@@ -111,11 +114,17 @@ The existing managed Codex console remains a separate optional workflow.
 
 ## Installation
 
+Clone the source to get started:
+
+```powershell
+git clone https://github.com/rehnx/SwapCtx.git
+cd SwapCtx
+```
+
 ### Use a locally prepared Windows candidate
 
 The portable x64 package needs no Rust, Node or compiler for core commands.
-Public downloads and package-manager installation are not provided by this
-checkout. WinGet and Scoop packages have not been submitted.
+This checkout does not include published release assets or package-manager installation. WinGet and Scoop packages have not been submitted.
 
 For a candidate you built or obtained from a trusted maintainer, verify
 `install-windows.ps1` and the ZIP against hashes obtained through a trusted
@@ -255,18 +264,22 @@ Non-Windows release compatibility has not been established by local Windows test
 
 ## Project status
 
-| Area | Current evidence |
-| --- | --- |
-| Core, recovery and native adapter contracts | Deterministic local Rust/Node tests, synthetic lifecycle events and fake providers. |
-| Native provider receipt and adherence | Unverified with real native providers; no general recovery guarantee. |
-| Managed-console model use | A historical authenticated pilot passed its specific checks; it does not validate the newer native route or natural compaction recovery. |
-| Portable distribution | Local candidate preparation and acceptance; see the [current release assessment](docs/PHASE11_RELEASE_READINESS.md). |
-| Public release | Approval pending. Hosted acceptance, clean-machine evidence, advisory review and publisher identity remain release decisions. |
+SwapCtx is an early preview. The core provides explicit local memory and recovery;
+optional native integrations require the provider capabilities listed above.
+Use synthetic data when evaluating integrations, and keep backups of important stores.
 
-Current integration evidence and remaining release work are recorded in the
-[unified integration report](docs/UNIFIED_INTEGRATION.md). Release review,
-distribution trust and independently verified native compatibility remain gates.
-There is no automatic conversation capture.
+| Area | Status |
+| --- | --- |
+| License | Apache-2.0; source available on [GitHub](https://github.com/rehnx/SwapCtx). |
+| Core and adapter contracts | Deterministic Rust/Node tests with isolated stores and fake providers. |
+| Live native provider compatibility | Experimental; provider receipt and adherence are unverified. |
+| Windows packages | Release preparation and acceptance tooling available; final tested assets pending. |
+| Package managers | No WinGet, Scoop or crates.io distribution is claimed. |
+
+See the [current release review](docs/OPEN_SOURCE_RELEASE_REVIEW.md) for this
+checkout's verification and publishing limitations. Historical engineering evidence
+and remaining Windows gates are in the [launch assessment](docs/LAUNCH_READINESS.md)
+and [integration report](docs/UNIFIED_INTEGRATION.md).
 
 ---
 
@@ -280,9 +293,14 @@ There is no automatic conversation capture.
 
 ---
 
-## Community & Contributing
+## Contributing and support
 
-We welcome contributions! Please review our contributor and community guidelines:
+Start with [CONTRIBUTING.md](CONTRIBUTING.md) for setup, architecture and required checks.
+Use [GitHub issues](https://github.com/rehnx/SwapCtx/issues) for reproducible bugs
+and feature requests. Report vulnerabilities privately through [SECURITY.md](SECURITY.md).
+
+Community resources:
+
 - [Contributor Guide (`CONTRIBUTING.md`)](CONTRIBUTING.md) — Setup, guidelines, architecture map, and verification instructions.
 - [Code of Conduct (`CODE_OF_CONDUCT.md`)](CODE_OF_CONDUCT.md) — Standards for respectful community participation.
 - [Support & Troubleshooting (`SUPPORT.md`)](SUPPORT.md) — Common diagnostic steps and issue reporting guidelines.
