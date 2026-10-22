@@ -125,6 +125,47 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       # Public repositories never upload candidates through this workflow.
+  windows-recipient:
+    needs: windows-preview
+    if: ${{ github.event.repository.private }}
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: swapctx-windows-preview-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/swapctx-recipient
+      - name: Verify original files and test on a separate Windows host
+        shell: pwsh
+        run: |
+          $taskCandidate = Join-Path $env:RUNNER_TEMP 'swapctx-recipient'
+          $taskHashes = @{}
+          foreach ($taskLine in Get-Content -LiteralPath (Join-Path $taskCandidate 'SHA256SUMS.txt')) {
+            if ($taskLine -cnotmatch '\A([0-9a-f]{64})  ([A-Za-z0-9_.-]+)\z') { throw 'Malformed checksum entry' }
+            $taskExpected = $Matches[1]; $taskName = $Matches[2]
+            if ($taskHashes.ContainsKey($taskName)) { throw 'Duplicate checksum entry' }
+            $taskFile = Join-Path $taskCandidate $taskName
+            if ((Get-Item -LiteralPath $taskFile).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Redirected candidate file' }
+            if ((Get-FileHash -LiteralPath $taskFile -Algorithm SHA256).Hash -ine $taskExpected) { throw 'Candidate checksum mismatch' }
+            $taskHashes[$taskName] = $taskExpected
+          }
+          if ($taskHashes.Count -ne 6) { throw 'Incomplete candidate checksums' }
+          foreach ($taskName in @('install-windows.ps1','test-windows-preview.ps1','build-info.json','release-checks.json','windows-acceptance.json')) {
+            if (!$taskHashes.ContainsKey($taskName)) { throw 'Missing candidate evidence' }
+          }
+          $taskArchives = @(Get-ChildItem -LiteralPath $taskCandidate -Filter 'swapctx-*-windows-x64.zip' -File)
+          if ($taskArchives.Count -ne 1 -or !$taskHashes.ContainsKey($taskArchives[0].Name)) { throw 'Expected one checksummed archive' }
+          $taskPS = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+          & $taskPS -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $taskCandidate 'test-windows-preview.ps1') -Archive $taskArchives[0].FullName -ExpectedSha256 $taskHashes[$taskArchives[0].Name] -Installer (Join-Path $taskCandidate 'install-windows.ps1') -InstallerSha256 $taskHashes['install-windows.ps1'] -WorkDirectory (Join-Path $env:RUNNER_TEMP 'recipient-work') -Report (Join-Path $env:RUNNER_TEMP 'independent-windows-acceptance.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Separate-host recipient acceptance failed' }
+          Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'independent-windows-acceptance.json')
+      - name: Retain separate-host acceptance evidence privately
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-recipient-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/independent-windows-acceptance.json
+          if-no-files-found: error
+          retention-days: 7
   advisories:
     runs-on: ubuntu-latest
     steps:

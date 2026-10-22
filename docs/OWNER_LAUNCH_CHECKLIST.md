@@ -32,7 +32,11 @@ vulnerability details. Keep this gate open until private intake is usable.
 Use a separate Windows x64 machine or clean VM with Windows PowerShell 5.1,
 preferably without Rust, Node, MSVC or providers. Same-machine hosted acceptance
 with a restricted PATH does not establish independent-machine compatibility.
-No independent Windows host/credentials are attached to the cloud environment.
+No independent physical Windows host/credentials are attached to the cloud
+environment. Private CI additionally transfers the exact tested package from its
+producer to a separate Windows 2022 runner and preserves that recipient report.
+When passed, this supplies independent hosted-VM/OS evidence. It does not prove
+behavior on a clean personal machine without developer tools installed.
 
 Transfer the exact candidate privately through a founder-approved route. Preserve
 the seven original files: ZIP, installer, acceptance script, checksums, build
@@ -67,8 +71,9 @@ Persistent user PATH setup remains a separate manual Windows check.
 
 ## Final engineering evidence and prerelease preparation
 
-- Select merged source with clean working tree and all five Foundation jobs
-  passed: Windows/Linux, advisories, history scan and fresh Windows producer.
+- Select merged source with clean working tree and all Foundation jobs passed:
+  Windows/Linux, advisories, history scan, fresh Windows producer and the separate
+  Windows recipient (private CI).
 - Verify strict pre/post/independent-build hashes, static CRT, native release
   tests, package/receipt regressions and all recipient checks. Keep #13 scoped
   to actual native toolchain evidence; never normalize differences away.

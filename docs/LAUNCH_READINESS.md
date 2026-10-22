@@ -44,7 +44,7 @@ not establish a hosted Windows pass.
 | Gate | Evidence still needed |
 | --- | --- |
 | [Private reporting and publisher trust](https://github.com/rehnx/SwapCtx/issues/5) | Confirm a usable private intake; decide signing or explicitly unsigned preview and trusted hash delivery. |
-| [Independent Windows acceptance](https://github.com/rehnx/SwapCtx/issues/6) | Test the final exact candidate on an independent machine; retain source, receipts and all asset hashes. |
+| [Independent Windows acceptance](https://github.com/rehnx/SwapCtx/issues/6) | Final private CI includes a separate Windows 2022 recipient of the exact producer package. Preserve its report; clean personal-machine and persistent PATH checks remain manual. |
 | [Native compatibility](https://github.com/rehnx/SwapCtx/issues/7) | Separate authorization and exact-provider evaluation, or retain explicit experimental/unverified support language. |
 | [Windows reproducibility](https://github.com/rehnx/SwapCtx/issues/13) | Preserve raw differences; identify native compiler/linker/SDK and verify final same-toolchain builds. Cross-machine byte equality is not claimed. |
 | Final source and assets | All hosted checks, a fresh static-CRT producer and recipient tests for the accepted revision; preserve that exact package. |
