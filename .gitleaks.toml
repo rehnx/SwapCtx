@@ -1,0 +1,14 @@
+title = "SwapCtx history scan"
+
+[extend]
+useDefault = true
+
+# Exact, deliberately synthetic detector fixtures. No path or commit exclusions.
+[allowlist]
+description = "Reviewed synthetic values used to test redaction"
+regexTarget = "secret"
+regexes = [
+  '''^AKIA1234567890123456$''',
+  '''^AKIAABCDEFGHIJKLMNOP$''',
+  '''^PrivateActor193847$''',
+]
