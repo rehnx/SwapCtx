@@ -1,9 +1,471 @@
 {
-  "status": "validation_in_progress",
+  "format_version": 1,
   "date": "2026-10-22",
-  "base": "b84b3cd08a3f175de7c731a9b81d650b4a284871",
-  "merge": "a96f08a",
-  "real_provider_launches": 0,
-  "windows_local": "unavailable_linux_executor",
-  "hosted_ci": "pending"
+  "source_commit": "f82d402813375c7396b7128d868e7b4a9b9d541b",
+  "base_commit": "b84b3cd08a3f175de7c731a9b81d650b4a284871",
+  "input_branches": {
+    "unified": "6181a7b4447f927e4a52cf32a6f85d67a277f284",
+    "intelligence": "7fc80fdcd68e667bbb72857a4ebec3a2e72daab7"
+  },
+  "merge_commit": "a96f08adb09c136342541a868d29d92c762197b2",
+  "conflicts": [],
+  "branch": "codex/unified-reliability",
+  "pr_url": "https://github.com/rehnx/SwapCtx/pull/4",
+  "environment": {
+    "os": "Linux-6.18.55-x86_64-with-glibc2.41",
+    "rust": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "node": "v24.19.0"
+  },
+  "rust_tests": {
+    "debug": {
+      "passed": 97,
+      "failed": 0,
+      "ignored": 1
+    },
+    "release": {
+      "passed": 97,
+      "failed": 0,
+      "ignored": 1
+    }
+  },
+  "supplemental": {
+    "schema": 10,
+    "context": 23,
+    "session": 23,
+    "everyday": 28,
+    "native": {
+      "passed": 34,
+      "skipped_windows_only": 12
+    },
+    "pilot_evaluator": 12,
+    "soak_evaluator": 11,
+    "passed_total": 141
+  },
+  "documentation": {
+    "check": "documentation",
+    "ok": true,
+    "files": 16,
+    "local_links": 63,
+    "fenced_blocks": 35,
+    "powershell_syntax": "not_run_non_windows",
+    "readme_core_commands_executed": 4,
+    "provider_examples_help_only": 4,
+    "mermaid": "restricted flowchart syntax and references checked; GitHub rendering unverified",
+    "external_links": "not fetched",
+    "real_provider_launches": 0
+  },
+  "notices": {
+    "windows_packages": 57,
+    "check_exit_code": 0
+  },
+  "dependency_audit": {
+    "database": {
+      "advisory-count": 1348,
+      "last-commit": "59ef7abf8ce56ea80fe7eba97ba3835449009fa4",
+      "last-updated": "2026-10-22T09:21:52+02:00"
+    },
+    "lockfile": {
+      "dependency-count": 76
+    },
+    "settings": {
+      "target_arch": [],
+      "target_os": [],
+      "severity": null,
+      "ignore": [],
+      "informational_warnings": [
+        "unmaintained",
+        "unsound",
+        "notice"
+      ]
+    },
+    "vulnerabilities": {
+      "found": false,
+      "count": 0,
+      "list": []
+    },
+    "warnings": {}
+  },
+  "commands": [
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--check"
+      ],
+      "exit_code": 0,
+      "log": "fmt.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "log": "clippy.log",
+      "log_sha256": "ee1d3fffa2022e962e63e0dbe4d35c9c198450a20c29fc09030f635dbb38bfcd"
+    },
+    {
+      "name": "test",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--all-targets"
+      ],
+      "exit_code": 0,
+      "log": "test.log",
+      "log_sha256": "0952095eef679650a8843b4dba4d54816e6214cdeac58f643527d835ae5fe418"
+    },
+    {
+      "name": "build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release"
+      ],
+      "exit_code": 0,
+      "log": "build.log",
+      "log_sha256": "9576f1f7e73fc2bb1ec2336aae60cb485c591eadc60a1b998573411c34057e08"
+    },
+    {
+      "name": "release-test",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--release",
+        "--all-targets"
+      ],
+      "exit_code": 0,
+      "log": "release-test.log",
+      "log_sha256": "850dce065b68c523b04fdf050376da23d2bfaa6ebdeb2f602086fa7f71814b06"
+    },
+    {
+      "name": "check-sql",
+      "command": [
+        "node",
+        "scripts/check-sql.cjs"
+      ],
+      "exit_code": 0,
+      "log": "check-sql.log",
+      "log_sha256": "37da000c9d02462911f4b42be296321466054e1e307a9db3ebbb124b5b02271d"
+    },
+    {
+      "name": "check-context",
+      "command": [
+        "node",
+        "scripts/check-context.cjs",
+        "target/release/swapctx"
+      ],
+      "exit_code": 0,
+      "log": "check-context.log",
+      "log_sha256": "629117f36da0c0ab4bdf8beae8d197bb02d41103bf8dccc65ddae83824c06cb4"
+    },
+    {
+      "name": "check-session",
+      "command": [
+        "node",
+        "scripts/check-session.cjs",
+        "target/release/swapctx"
+      ],
+      "exit_code": 0,
+      "log": "check-session.log",
+      "log_sha256": "b250dccb0b0925f5cb9e347bdb1548e33d737ed7d40d1a948e05e53421a9ae7e"
+    },
+    {
+      "name": "check-everyday",
+      "command": [
+        "node",
+        "scripts/check-everyday.cjs",
+        "target/release/swapctx"
+      ],
+      "exit_code": 0,
+      "log": "check-everyday.log",
+      "log_sha256": "90d1067851bdabec226bf815e74dd387f05ed90e14adc253e9e4434b836c6cc7"
+    },
+    {
+      "name": "check-native",
+      "command": [
+        "node",
+        "scripts/check-native.cjs",
+        "target/release/swapctx"
+      ],
+      "exit_code": 0,
+      "log": "check-native.log",
+      "log_sha256": "0c5bc3d0d5e76fdc2c9c9ebecf974982529f00ad1c8118cf4f0d83226f8122be"
+    },
+    {
+      "name": "check-docs",
+      "command": [
+        "node",
+        "scripts/check-docs.cjs",
+        "target/release/swapctx"
+      ],
+      "exit_code": 0,
+      "log": "check-docs.log",
+      "log_sha256": "4f3a49456d1634a286b6fac9e8cc041e2c332eb5a5a1679203f737486b5b3c69"
+    },
+    {
+      "name": "check-pilot-harness",
+      "command": [
+        "node",
+        "scripts/check-pilot-harness.cjs"
+      ],
+      "exit_code": 0,
+      "log": "check-pilot-harness.log",
+      "log_sha256": "5b0641552ff3bce70c54e8bb8feb31323240b97208d0218f5296a3e37ad862bd"
+    },
+    {
+      "name": "check-soak-harness",
+      "command": [
+        "node",
+        "scripts/check-soak-harness.cjs"
+      ],
+      "exit_code": 0,
+      "log": "check-soak-harness.log",
+      "log_sha256": "6c5618a1ff6b465cdc8fc17e62865824e9cadf96df5787fa8bdc5d26a27286f4"
+    },
+    {
+      "name": "notices-check",
+      "command": [
+        "node",
+        "scripts/third-party.cjs",
+        "--check"
+      ],
+      "exit_code": 0,
+      "log": "notices-check.log",
+      "log_sha256": "c04ba286e93bd3f354621b70956fa62755ecfe88a05cc245f221e4034ccc5684"
+    }
+  ],
+  "source_inventory": [
+    {
+      "path": "Cargo.lock",
+      "sha256": "4c986d2308585f18e92302b4b524de5312a009c3d6af752bedf9d55fddb86a33"
+    },
+    {
+      "path": "Cargo.toml",
+      "sha256": "f0d74e7e3477bd7d27ca5993b72039785ff69ce460ebb68fbb28ca3eabe02dcb"
+    },
+    {
+      "path": "integrations/codex/exec-context.cjs",
+      "sha256": "7cead83b6159383711fd8937732268ccf2efb6b87d2cd40ae49a9f2ea422dc79"
+    },
+    {
+      "path": "integrations/codex/observatory.cjs",
+      "sha256": "ba3f0f59edbc6ed4e63c12ed47222f581e59263a62657bd8660547bdb00b576a"
+    },
+    {
+      "path": "integrations/codex/session-context.cjs",
+      "sha256": "7f096a07341c8fd0abb562c1945861a1d16b4e569c3d601aea7d1b37448d56d6"
+    },
+    {
+      "path": "integrations/codex/session.cjs",
+      "sha256": "582885d1c2843795efe15c6e453e3f94710cda2b158333f2ed9f2bfa1a21eb73"
+    },
+    {
+      "path": "integrations/native/native.cjs",
+      "sha256": "3a28523f04fb557c913d32ca0fe1f04eb6d1bc4aa6bd7b1236846a640e993ce5"
+    },
+    {
+      "path": "rust-toolchain.toml",
+      "sha256": "2ad6f15416572b4836585087f1d4abc53b8fa2dbd616f8dacfaa587ed6714228"
+    },
+    {
+      "path": "src/backup.rs",
+      "sha256": "ba3b38b45f06b66c782cb0febb7e22203501bf46a9630bac5e6b330e932df970"
+    },
+    {
+      "path": "src/codex.rs",
+      "sha256": "3cd3bbb9684d724fd701960df4b55651abc08f2a1fab4c1d7bd492a06074c86d"
+    },
+    {
+      "path": "src/context.rs",
+      "sha256": "11c77468e1f4a307f897fb8bdde9f8aab7683e2671c0655e6598ad60d201afcb"
+    },
+    {
+      "path": "src/display.rs",
+      "sha256": "fcda0b8bbdde63b817ddf765736311fa93507fe1eb5550c8d62bd9a41a52d4c7"
+    },
+    {
+      "path": "src/explain.rs",
+      "sha256": "d10772e6a1fde381fdcc3d497b2db11ea136b65c10a1090b0761d91129f872d6"
+    },
+    {
+      "path": "src/handoff.rs",
+      "sha256": "8385b2d6f7fdc05907df52dbdf85bc8b919045c2a6c96260b9f13dcadf6809d0"
+    },
+    {
+      "path": "src/history.rs",
+      "sha256": "7686f967bfdb31b669fe0c1b032089ace759271199c2f7c501781331d99ccd41"
+    },
+    {
+      "path": "src/inspect.rs",
+      "sha256": "274990609dbc2b6154e2f967d9bf0efd8653d0f8925039546fb1e9fe05fd0218"
+    },
+    {
+      "path": "src/intent.rs",
+      "sha256": "848eefb15371c95f700c3bfaa8bf219742596ffb6b2b63783198501784f9ed8c"
+    },
+    {
+      "path": "src/main.rs",
+      "sha256": "61af9ff7279584f1a894ec213bd46a0afaa3cac7712d0b900286226226c1685f"
+    },
+    {
+      "path": "src/memory.rs",
+      "sha256": "3f9aa710912482b67648fcbb4dbf0b89a1fa260ab9c7e797a86b4ffcc6a6efad"
+    },
+    {
+      "path": "src/native.rs",
+      "sha256": "3539cc53b48bc0148fb1eeb0ed18514cfa8876c71736a83f859bc0c95cb218df"
+    },
+    {
+      "path": "src/paths.rs",
+      "sha256": "3fcd5b8cf6077768080b2f6ffef15fd3f7b1e3f99ca9163b8f34e36582b55871"
+    },
+    {
+      "path": "src/protect.rs",
+      "sha256": "2ca226c20162bb766e416e82bfacaa754951dab7571d7c69ead8ec7aaefddc71"
+    },
+    {
+      "path": "src/provider.rs",
+      "sha256": "b5c427bfdfaa4025978366e0c6230d8c8ccacc113d83ba872ce911313e0b8849"
+    },
+    {
+      "path": "src/schema_v2.sql",
+      "sha256": "42641f8ce68de76ba07bae46e2734d062e47e6f2450d6587e55a5633d4e486ef"
+    },
+    {
+      "path": "src/schema_v3.sql",
+      "sha256": "732c1e27126df869bd7f8980ff8a252c89a089175c212b30980a4459d40d72f7"
+    },
+    {
+      "path": "src/sensitive.rs",
+      "sha256": "a59ab07b61a942b60f29ddb785b576a3b82a483a97e5a97baf1122a892d3c384"
+    },
+    {
+      "path": "src/storage.rs",
+      "sha256": "873d88cd372175ce9b37784e56755051f54f42f11057433095d527267b0d58f3"
+    },
+    {
+      "path": "src/transfer.rs",
+      "sha256": "ee74c59410be0bc8f2f82f4c881c3e546113a7e2100c4fd03097d4f872b0f1d9"
+    },
+    {
+      "path": "src/verify.rs",
+      "sha256": "5de2f3e9d09cfc9015bc286a6a7cbcbfa5098b21eaa2b67f95f30739dc297705"
+    },
+    {
+      "path": "src/worktree.rs",
+      "sha256": "456a5d2458f6fc626151e354d1bd5404b019f73311fb7d86ff25a4a733f8d869"
+    },
+    {
+      "path": "tests/cli.rs",
+      "sha256": "bacd4466e0e2c06ced9fc7825117f4fc12366a9826046e8ac3bac674a4e88ed9"
+    },
+    {
+      "path": "tests/fixtures/native-provider-exe.rs",
+      "sha256": "342f6216f4a37ae9aa03e9b45ace9b12fd2ee7e77de5184c540bf1f3215cb5dd"
+    },
+    {
+      "path": "tests/fixtures/native-provider.cjs",
+      "sha256": "6224bd029fc851b7d32ca6852a2cdfd053e7755a7c9e23e2ab857e624ba96016"
+    },
+    {
+      "path": "tests/fixtures/v0.sql",
+      "sha256": "34ededbd7fb91fe020356aa41bfb1c120f1a35bd20553eb65391640102c8ae2f"
+    },
+    {
+      "path": "tests/fixtures/windows-hook-runner.rs",
+      "sha256": "656f0456fe61191182f8bd2c2bce45a60237b6bc257be8728b7909fdb25bbb0e"
+    },
+    {
+      "path": "tests/intelligence_reliability.rs",
+      "sha256": "dfb05214790eaf663a8f86c669056baedef765a16f87276a1f2ca10c32317591"
+    },
+    {
+      "path": "tests/memory_audit.rs",
+      "sha256": "fb4b9b2148928cbc1781419a7371129a266dd18779fcb40bfcb5b5b878d96838"
+    },
+    {
+      "path": "tests/provider_launch.rs",
+      "sha256": "36ff3b0d3c6066afa31b8fc347ebfb59912059af1a39e48cb65a8d34d22673f9"
+    }
+  ],
+  "release_binary": {
+    "platform": "linux-x86_64",
+    "sha256": "322ffbdf277d440c851ebdcbd66bc432addbc458ee9ebd6ae8d37edd1f1d3dac",
+    "distributable_windows_candidate": false
+  },
+  "changed_files_vs_main": [
+    ".github/workflows/ci.yml",
+    "AGENTS.md",
+    "CHANGELOG.md",
+    "Cargo.lock",
+    "Cargo.toml",
+    "README.md",
+    "THIRD_PARTY_NOTICES.txt",
+    "docs/CODEX_HOOK_DELIVERY_INVESTIGATION.md",
+    "docs/CODEX_WINDOWS_HOOK_FAILURE.md",
+    "docs/INTELLIGENCE_WORKFLOWS.md",
+    "docs/MEMORY_QUALITY.md",
+    "docs/NATIVE_INTEGRATION_STABILIZATION.md",
+    "docs/PHASE8_NATIVE_PROVIDERS.md",
+    "docs/UNIFIED_INTEGRATION.md",
+    "docs/USAGE.md",
+    "docs/evidence/native-integration-stabilization.json",
+    "docs/evidence/unified-integration.json",
+    "docs/third-party-inventory.json",
+    "integrations/codex/session.cjs",
+    "integrations/native/native.cjs",
+    "scripts/check-docs.cjs",
+    "scripts/check-native.cjs",
+    "src/context.rs",
+    "src/display.rs",
+    "src/explain.rs",
+    "src/handoff.rs",
+    "src/inspect.rs",
+    "src/intent.rs",
+    "src/main.rs",
+    "src/memory.rs",
+    "src/native.rs",
+    "src/paths.rs",
+    "src/provider.rs",
+    "src/sensitive.rs",
+    "src/storage.rs",
+    "src/verify.rs",
+    "src/worktree.rs",
+    "tests/fixtures/native-provider.cjs",
+    "tests/fixtures/windows-hook-runner.rs",
+    "tests/intelligence_reliability.rs",
+    "tests/memory_audit.rs"
+  ],
+  "hosted_ci": {
+    "status_at_recording": "running_on_prior_checkpoint; final revision scheduled by push",
+    "authority": "https://github.com/rehnx/SwapCtx/pull/4/checks",
+    "windows_local_execution": "unavailable_linux_executor"
+  },
+  "restrictions": {
+    "real_provider_launches": 0,
+    "real_inference_requests": 0,
+    "releases_published": 0,
+    "mainline_merges": 0,
+    "visibility_changes": 0,
+    "distribution_uploads": 0
+  },
+  "limitations": [
+    "Windows results must be read from the exact hosted CI revision.",
+    "No live Codex/Claude certification or provider receipt/adherence evidence.",
+    "Plaintext storage; self-reported provenance; heuristic secret filtering.",
+    "Unsigned snapshot fingerprints; no atomic filesystem snapshot or race-free enforcement.",
+    "No independent clean-machine acceptance or publisher signing decision."
+  ]
 }

@@ -55,6 +55,13 @@ The daily handoff workflow also gains explicit `--include-decisions` and
 retain active/valid/fresh/unconflicted/known-origin and secret-heuristic filters.
 These flags neither send data nor start a provider.
 
+Final review also fixes human/machine verdict consistency: unavailable Git evidence
+produces failed verification JSON without an attestation; secret markers in
+optional-memory provenance fail verification; inspection text no longer reports
+PASS on detected secrets; and JSON counts actual denied files. Handoff preview
+and apply reject a shared key with a different kind even when wording matches,
+preventing a newly introduced mandatory-context conflict.
+
 ## Verification and artifacts
 
 Environment: Linux x86_64, Rust 1.99.0, Node 24.19.0. The merged baseline passed
@@ -78,6 +85,16 @@ node scripts/check-soak-harness.cjs
 node scripts/third-party.cjs --check
 cargo audit --json
 ```
+
+The final local gate passed formatting, Clippy with warnings denied, the release
+build and **97 Rust tests in each of debug and release**, with one existing
+performance test ignored per profile. Supplemental checks passed: schema 10,
+context 23, session 23, everyday 28, native 34, pilot evaluator 12 and soak
+evaluator 11 (**141 checks**). Native additionally reports **12 Windows-only
+skips**. Documentation checks passed for 16 files/63 local links; PowerShell
+syntax was explicitly not run on Linux. Notices matched 57 Windows packages.
+The current RustSec review found zero advisories or informational warnings in
+the lockfile (database commit `59ef7abf8ce56ea80fe7eba97ba3835449009fa4`).
 
 Exact final local counts, source/log hashes and advisory-database identity are
 recorded in [machine-readable evidence](evidence/unified-integration.json).
