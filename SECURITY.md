@@ -7,22 +7,20 @@ Current review evidence is in [Phase 10](docs/PHASE10_PRODUCTION_HARDENING.md) a
 
 ## Reporting a vulnerability
 
-Private vulnerability reporting is enabled for the public SwapCtx repository.
-Verified that GitHub displays the private **Report a vulnerability** form, including advisory details, impact, affected products and severity fields.
-The reporting form was not submitted. The security policy is being updated to document the confirmed reporting route.
-Unsigned-preview publisher trust remains a separate release decision.
+GitHub Private Vulnerability Reporting is enabled for SwapCtx.
 
-If the repository's **Security** tab offers **Report a vulnerability**, use that
-private GitHub form. Otherwise, request a private contact method from the
-maintainer without posting exploit details, credentials, private paths or data.
-Do not put sensitive vulnerability reports in a public issue or pull request.
-Before public release, the maintainer must establish and verify a private intake
-route and update this policy with the confirmed instructions.
+To report a vulnerability privately:
 
-A report should identify the affected source revision or binary hash, Windows
-version, impact and a minimal reproduction using synthetic data. Include
-mitigations if known. Do not attach a real memory database, provider transcript,
-authentication configuration or environment dump.
+1. Open [SwapCtx Security Advisories](https://github.com/rehnx/SwapCtx/security/advisories).
+2. Select **Report a vulnerability**.
+3. Describe the affected version, security impact and reproduction steps using synthetic data.
+4. Submit the report privately to the maintainers.
+
+Do not disclose vulnerabilities, credentials, private memories or sensitive logs in public issues or pull requests.
+
+There is currently no guaranteed security response time or supported-version commitment.
+
+Reports should identify the affected source revision or binary hash, Windows version, impact and a minimal reproduction. Do not attach real memory databases, provider transcripts or authentication configurations.
 
 ## Security boundaries
 
