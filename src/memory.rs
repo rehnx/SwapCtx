@@ -192,7 +192,9 @@ pub fn run(conn: &mut Connection, project: i64, action: Action) -> Result<()> {
                 validate_text("Provenance label", value, 4096)?;
                 sensitive::guard(value, allow_sensitive)?;
             }
-            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let tx = conn
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .context("Cannot start memory write transaction (database may be busy)")?;
             let id = insert(
                 &tx,
                 project,
@@ -208,7 +210,8 @@ pub fn run(conn: &mut Connection, project: i64, action: Action) -> Result<()> {
                 "add",
                 "Explicitly saved by CLI; source and actor are self-reported",
             )?;
-            tx.commit()?;
+            tx.commit()
+                .context("Cannot commit memory write transaction")?;
             println!("Saved local memory record #{id}");
         }
         Action::Supersede {

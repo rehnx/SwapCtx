@@ -2,6 +2,9 @@
 
 ## 0.1.0-preview — unpublished
 
+- Give transient SQLite writer contention a bounded 30-second wait while keeping
+  read waits at five seconds; preserve immediate transactions and explicit errors.
+
 - Freeze new features for the first Windows prerelease; keep native provider
   receipt/adherence explicitly experimental and unverified.
 - Strengthen full-binary verification to fail immediately on pre/post-test
