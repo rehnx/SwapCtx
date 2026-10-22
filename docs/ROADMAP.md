@@ -5,9 +5,11 @@ memory capture, and explicit provider sharing. No mandatory cloud service, backg
 
 ---
 
-## 🎯 Current Milestone: First Public Preview (v0.1.0)
+## 🎯 Current Milestone: First Public Preview (v0.1.0-preview)
 
-Key objectives before issuing the initial v0.1.0 public preview:
+New features are frozen for v0.1.0-preview. Focus on release-blocking fixes, evidence and documentation. Before publication, complete the build reproducibility investigation [#13](https://github.com/rehnx/SwapCtx/issues/13), private intake/publisher trust [#5](https://github.com/rehnx/SwapCtx/issues/5), and independent Windows acceptance [#6](https://github.com/rehnx/SwapCtx/issues/6).
+
+Key objectives before issuing the initial public preview:
 
 - **Unified Native & Intelligence Foundation**: Ensure deterministic test coverage across Windows and Linux runner environments.
 - **Handoff & Memory Diagnostics**: Keep memory handoff (`swapctx handoff`) and health audit (`swapctx memory audit`) contracts intuitive, transparent, and reviewable without automatic knowledge merging.
@@ -16,7 +18,7 @@ Key objectives before issuing the initial v0.1.0 public preview:
 
 ---
 
-## 🛠️ Contributor Focus Areas
+## 🛠️ Contributor Focus Areas (after the preview freeze)
 
 We welcome community contributions! The following areas are great entry points for new contributors:
 
@@ -31,7 +33,7 @@ We welcome community contributions! The following areas are great entry points f
 
 ### 3. Community Documentation & Translation
 - **Troubleshooting Scenarios**: Expand [SUPPORT.md](../SUPPORT.md) with common setup issues, PATH configuration edge cases, and Node 24+ version checks.
-- **Protocol Guides**: Improve technical explanations of `swapctx context v1` JSON protocols in [docs/CONTEXT_PROTOCOL.md](CONTEXT_PROTOCOL.md).
+- **Protocol Guides**: Improve technical explanations of `swapctx context --protocol-version 1` JSON protocols in [docs/CONTEXT_PROTOCOL.md](CONTEXT_PROTOCOL.md).
 
 ---
 
