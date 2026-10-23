@@ -67,7 +67,10 @@ fn main() -> std::io::Result<()> {
         .to_ascii_lowercase()
         .ends_with("cmd.exe")
     {
-        command.args(["/d", "/v:off", "/c"]).arg(&args[1]);
+        // /c has special quote handling. Invoke the batch file through CALL so
+        // paths containing spaces or cmd metacharacters such as '&' remain one
+        // command and the child batch file's exit code is returned reliably.
+        command.args(["/d", "/v:off", "/c", "call"]).arg(&args[1]);
     } else {
         command
             .args([
