@@ -1,5 +1,12 @@
 # Preparing a Windows preview
 
+For the already published `v0.1.0-preview`, use the
+[Windows installation guide](WINDOWS_RELEASE.md) and
+[published verification record](RELEASE_VERIFICATION.md). Do not rerun this
+producer to replace, retag, or relabel the published assets. Documentation-only
+updates on main do not require a new candidate. The procedure below applies to
+development/release-engineering work that actually needs a fresh candidate.
+
 This is the current local producer procedure. Earlier phase reports are retained
 as historical evidence; they do not certify newer source or binaries. The
 [Phase 11 assessment](PHASE11_RELEASE_READINESS.md) records the latest candidate
