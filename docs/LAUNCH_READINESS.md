@@ -1,5 +1,10 @@
 # Public preview decision record
 
+> Historical preparation record, 2026-10-22. The
+> [public v0.1.0-preview release](https://github.com/rehnx/SwapCtx/releases/tag/v0.1.0-preview)
+> was subsequently published on 2026-10-23. See [current release evidence](RELEASE_VERIFICATION.md).
+> The original decisions and pending gates below retain their historical scope.
+
 Prepared 2026-10-22. **Public-launch decision: NO-GO pending the gates below.**
 This is engineering preparation, not permission to change visibility, publish a
 release, create a public download or distribute a candidate externally.

@@ -1,4 +1,34 @@
-# SwapCtx portable Windows candidate
+# Install SwapCtx on Windows
+
+The public [v0.1.0-preview release](https://github.com/rehnx/SwapCtx/releases/tag/v0.1.0-preview)
+supports **Windows x64**. The binary is unsigned. There are no official WinGet,
+Scoop, Linux, or macOS packages. Core memory commands need no Node.js, Rust,
+compiler, or AI provider at runtime.
+
+## Download and verify
+
+Download these three assets into the same directory:
+
+- [swapctx-0.1.0-preview-windows-x64.zip](https://github.com/rehnx/SwapCtx/releases/download/v0.1.0-preview/swapctx-0.1.0-preview-windows-x64.zip)
+- [install-windows.ps1](https://github.com/rehnx/SwapCtx/releases/download/v0.1.0-preview/install-windows.ps1)
+- [SHA256SUMS.txt](https://github.com/rehnx/SwapCtx/releases/download/v0.1.0-preview/SHA256SUMS.txt)
+
+Open Windows PowerShell in that download directory. Check both files before
+running the installer:
+
+```powershell
+$ExpectedZipSha256 = '42df6ee920ac158e7c3b49cc1902267054973d5fee404fcd659269bb2ede31c4'
+$ExpectedInstallerSha256 = '4002d49f29715653f4df9f9a333584fb6719b819f73b6a4c6a7a111a981619b2'
+if ((Get-FileHash -LiteralPath .\swapctx-0.1.0-preview-windows-x64.zip -Algorithm SHA256).Hash -ine $ExpectedZipSha256) { throw 'ZIP checksum mismatch' }
+if ((Get-FileHash -LiteralPath .\install-windows.ps1 -Algorithm SHA256).Hash -ine $ExpectedInstallerSha256) { throw 'Installer checksum mismatch' }
+```
+
+These values identify the existing published assets, not later source builds.
+Compare with the official release through a channel you trust. Checksums detect
+changed bytes; they do not independently authenticate the publisher. Inside the
+ZIP, `manifest.json` lists each payload file's SHA-256 and length.
+
+## Install
 
 Install or extract the ZIP into a new local folder. No administrator privileges,
 PATH modification, telemetry, or background service is required. Core memory
@@ -11,26 +41,23 @@ which launch the installed provider's original UI. Bare `swapctx` opens a provid
 selector in an interactive terminal. Memory exposure is off by default. Optional
 `--context` requires Node.js 24+ and a provider advertising the required hook or
 plugin interface; older versions fall back to ordinary native launching. This
-adapter is offline-tested only, with native receipt/adherence unverified. See
-`docs/PHASE8_NATIVE_PROVIDERS.md` in the source repository for native setup and
+adapter has synthetic test coverage, with live compatibility and native
+receipt/adherence unverified. See [native setup](PHASE8_NATIVE_PROVIDERS.md) for
 limitations. No provider is bundled or authenticated by SwapCtx.
 
-Before extraction, compare `Get-FileHash .\swapctx-0.1.0-preview-windows-x64.zip -Algorithm SHA256`
-with SHA256SUMS.txt from your trusted distribution channel. Inside the ZIP,
-manifest.json lists SHA-256 hashes and lengths for each payload file. These are
-corruption checks, not a digital signature or proof of publisher identity.
-This is an unsigned x64 Windows candidate using a portable directory layout.
-
-For verified installation, use the accompanying local PowerShell script. Obtain
-the expected ZIP hash from a trusted distribution channel; verify the script's
-own checksum against that channel before running it. For example:
+After both checks above pass, install into a **new** directory under the existing
+local application-data directory:
 
 ```powershell
-Get-FileHash .\install-windows.ps1 -Algorithm SHA256
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-windows.ps1 `
   -Archive .\swapctx-0.1.0-preview-windows-x64.zip `
-  -ExpectedSha256 'REPLACE_WITH_THE_64_HEX_DIGIT_ZIP_HASH' `
-  -Destination 'C:\Users\YourName\Tools\SwapCtx-0.1.0-preview'
+  -ExpectedSha256 $ExpectedZipSha256 `
+  -Destination "$env:LOCALAPPDATA\SwapCtx-0.1.0-preview"
+if ($LASTEXITCODE -ne 0) { throw 'Installation failed' }
+
+$SwapCtx = Join-Path $env:LOCALAPPDATA 'SwapCtx-0.1.0-preview\swapctx.exe'
+& $SwapCtx --version
+# Expected: swapctx 0.1.0-preview
 ```
 
 The parent directory must exist and the destination must be new. The script
@@ -46,7 +73,7 @@ remains available, with manual hash verification your responsibility.
 Use an absolute executable path, especially when changing project directories:
 
 ```powershell
-$SwapCtx = 'C:\Tools\SwapCtx\swapctx.exe'
+# $SwapCtx is the absolute executable path set during installation above.
 & $SwapCtx --version
 & $SwapCtx --help
 Set-Location 'C:\Projects\YourProject'
@@ -60,7 +87,7 @@ Set-Location 'C:\Projects\YourProject'
 To use the bare command from any project in your current PowerShell session:
 
 ```powershell
-$InstallDirectory = 'C:\Users\YourName\Tools\SwapCtx-0.1.0-preview'
+$InstallDirectory = Join-Path $env:LOCALAPPDATA 'SwapCtx-0.1.0-preview'
 $env:PATH = "$InstallDirectory;$env:PATH"
 Get-Command swapctx -CommandType Application
 swapctx --version
@@ -81,9 +108,16 @@ adding directories containing semicolons to PATH. Automatic persistent PATH
 registration and WinGet/Scoop installation are not provided; no public package
 identifier has been assigned or submitted.
 
-## Independent machine acceptance
+## Optional recipient acceptance
 
-The accompanying `test-windows-preview.ps1` requires only Windows PowerShell
+The release has three downloadable assets; it does **not** attach the producer's
+acceptance script or JSON reports. Ordinary installation does not require them.
+For a maintainer or recipient repeating the offline acceptance procedure, obtain
+`scripts/test-windows-preview.ps1` from the exact
+[published source revision](https://github.com/rehnx/SwapCtx/blob/962e1e649851684fab897b96f714e493f1e1c969/scripts/test-windows-preview.ps1)
+or the original maintainer packet. Git checkouts/downloads can differ in line
+endings; verify the exact script bytes before execution instead of assuming an
+arbitrary download matches the packet. The script requires Windows PowerShell
 5.1. Check its own SHA-256 against the trusted distribution channel before
 running it. It verifies the ZIP and installer hashes, installs into disposable
 storage, removes developer tools from its process PATH, and tests core memory,
@@ -100,11 +134,13 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
   -Report "$env:USERPROFILE\Desktop\SwapCtx-preview-report.json"
 ```
 
-Use the full 64-digit hashes, not the placeholders. This test restores its process
+Use the full 64-digit published hashes, not the placeholders. This test restores its process
 environment, removes its disposable work directory, and preserves an existing
 report instead of replacing it. The resulting JSON describes the machine and
 PowerShell versions and lists checks passed. A pass on a development laptop with
 PATH restricted still does not equal a pass on a clean Windows installation.
+The [release verification record](RELEASE_VERIFICATION.md) distinguishes the
+owner's reported separate-machine pass from publicly inspectable reports.
 
 `init` registers the current directory. Nested directories use the nearest
 registered ancestor. Default data lives in `%LOCALAPPDATA%\SwapCtx`, outside the
@@ -186,6 +222,9 @@ the current store. Use its `--data-dir` explicitly for subsequent commands.
 Backups cover saved project memory and rules, not native Codex conversation
 history or adapter session/settings files. To uninstall the portable program,
 close it and remove its executable folder; data remains separately stored.
+If you added a user Path entry, remove only that installation's entry in Windows
+environment-variable settings and open a new terminal. Keep your data directory
+and backups unless you separately intend to delete that plaintext data.
 
 ## Diagnostics and release limits
 
@@ -203,6 +242,7 @@ an inventory of separately installed Node, Codex, Rust or MSVC runtime component
 The public-candidate build recipe links the C runtime statically and rejects
 dynamic CRT imports. Ordinary `cargo build --release` output can still import
 VCRUNTIME140.dll; use the candidate produced by the documented release recipe.
-Public release still needs dependency advisory and redistribution review,
-hosted CI and clean-machine validation. Hashes do not establish source-to-binary
-provenance. No real-model evaluation is required or performed by packaging.
+The [published release evidence](RELEASE_VERIFICATION.md) records the exact source,
+asset hashes, CI, and acceptance-report limitations. A hosted pass does not
+establish clean personal-machine compatibility. Hashes do not establish
+source-to-binary provenance. No real-model evaluation is required or performed by packaging.

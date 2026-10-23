@@ -1,13 +1,20 @@
 # Support and troubleshooting
 
-Welcome to SwapCtx Support! If you encounter issues while running SwapCtx or setting up integrations, start with the following resources:
+The public release is [v0.1.0-preview for Windows x64](https://github.com/rehnx/SwapCtx/releases/tag/v0.1.0-preview).
+Native Codex and Claude Code sharing remains experimental. Linux CI does not
+establish Windows behavior, and no Linux/macOS binaries or stable support period
+are provided. Start with these resources:
 
 - **Installation**: [Windows release guide](docs/WINDOWS_RELEASE.md)
 - **Commands & Memory CLI**: [CLI usage guide](docs/USAGE.md)
 - **Native AI Adapters**: [Native provider setup guide](docs/PHASE8_NATIVE_PROVIDERS.md)
 - **Contributor Setup**: [Contributor guide](CONTRIBUTING.md)
+- **All Guides and Evidence**: [Documentation index](docs/README.md)
 
 General bug reports and feature ideas can be submitted via the repository's [issue tracker](https://github.com/rehnx/SwapCtx/issues).
+Use [the issue chooser](https://github.com/rehnx/SwapCtx/issues/new/choose) for a
+bug report or improvement proposal. Report vulnerabilities privately through
+[SECURITY.md](SECURITY.md), even if discovered while troubleshooting.
 *Note: As an open-source project, no dedicated SLA, response-time commitment, or hosted support service is provided.*
 
 ---
@@ -25,7 +32,7 @@ swapctx doctor
 ```
 
 When filing a report, please include:
-1. Source revision or binary SHA-256 fingerprint
+1. SwapCtx version, installation method, and source revision or binary SHA-256
 2. Windows OS version
 3. Exact command, arguments, and exit code
 4. Expected vs. actual behavior with a minimal synthetic reproduction
@@ -40,7 +47,7 @@ When filing a report, please include:
 | --- | --- | --- |
 | `swapctx` is not found | PATH environment variable does not include SwapCtx installation folder. | Add installation directory (e.g., `%LOCALAPPDATA%\SwapCtx-0.1.0-preview`) to your User Path in Windows environment variables, then restart terminal. |
 | Project not registered | Calling command outside a registered project directory. | Run `swapctx init` at project root. Nested registered projects have separate memory scopes in the same store. Ensure consistent `--data-dir` if overriding store locations. |
-| Node/provider executable missing | Core memory needs no Node. Native adapters need Node.js 24+ and installed provider executables. | Verify Node.js 24+ (`node -v`) and provider installation. For `swapctx native`, use `--executable` or `--node` flags to specify explicit paths if required. |
+| Node/provider executable missing | Core memory needs no Node. Native context adapters need Node.js 24+ and installed providers. Plain native EXEs need no Node; npm JavaScript entries do. | Verify the relevant runtime and provider installation. For `swapctx native`, use `--executable` or `--node` to specify explicit paths if required. |
 | Compatibility warning / plain UI fallback | Provider version/help probe did not pass context hook requirements. | Verify provider CLI supports required hook capability flags. A plain native session can launch without SwapCtx context sharing; the provider retains its own authentication, permissions and network behavior. |
 | No callback recorded | Hooks untrusted, disabled, or skipped by provider. | Check provider configuration and diagnostic logs. Successful preflight output does not imply provider hook invocation. |
 | Context withheld | Incomplete requirement coverage, conflicting records, or secret detection triggered. | Run `swapctx context` locally to inspect reported coverage and exclusions. Address conflicting or invalid records explicitly. |

@@ -1,9 +1,9 @@
 # Phase 8: native provider UIs
 
-The current portable candidate and release gates are recorded in
-[Phase 11 readiness](PHASE11_RELEASE_READINESS.md). The Phase 8 build results below
-remain historical; native hook receipt/adherence is still a separate live-provider
-verification boundary.
+For the public Windows preview, use the [installation guide](WINDOWS_RELEASE.md)
+and [published release evidence](RELEASE_VERIFICATION.md). The setup and contract
+sections below document the native route; Phase 8 build results remain historical.
+Native hook receipt/adherence is still a separate live-provider verification boundary.
 
 SwapCtx can launch the original Codex or Claude Code terminal interface. The
 managed `swapctx codex ...` console remains available with its existing behavior.
@@ -23,7 +23,7 @@ that provider's control. SwapCtx does not install or log into a provider.
 # Interactive selection; memory exposure defaults to No.
 swapctx
 
-# Native UIs, without exposing SwapCtx memory. No Node dependency in SwapCtx.
+# Native UIs without SwapCtx sharing. Standard npm JS entries still need Node.
 swapctx native codex
 swapctx native claude
 

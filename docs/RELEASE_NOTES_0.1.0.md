@@ -1,10 +1,9 @@
-# SwapCtx v0.1.0-preview — release notes (unpublished)
+# SwapCtx v0.1.0-preview — release notes
 
-Unpublished prerelease text. No release or tag is authorized by this document.
-Append the final release packet's exact source, CI and tested-asset identity block
-before publication. Never reuse an earlier candidate's hashes or rebuild approved
-assets. The CLI/package version and proposed tag are `0.1.0-preview` and
-`v0.1.0-preview`.
+Published on 2026-10-23 as the first public **Windows x64 prerelease**.
+[Download v0.1.0-preview](https://github.com/rehnx/SwapCtx/releases/tag/v0.1.0-preview).
+CLI/package version: `0.1.0-preview`. The published source and assets remain fixed
+when documentation on main changes.
 
 SwapCtx preserves deliberately saved project knowledge across coding sessions.
 This first Windows preview combines a Rust CLI, local SQLite memory, optional
@@ -62,16 +61,20 @@ different native toolchains, signed provenance or publisher identity. The previe
 is unsigned and not a security-certified product. Linux CI checks core contracts;
 no Linux distribution or support guarantee is included in this Windows preview.
 
-## Candidate identity — must be completed before publication
+## Published identity and evidence
 
-- Approved source SHA: use the exact release packet; proposed tag `v0.1.0-preview`.
-- Final hosted checks and fresh Windows producer run: record the exact run URL.
-- Tested executable, ZIP and installer SHA-256: extract from that run's evidence.
-- Independent Windows recipient acceptance: pending.
-- Signing/unsigned-preview trust decision and verified private security intake: pending.
-- Founder authorization for visibility, publication and distribution: pending.
+- Source: [`962e1e649851684fab897b96f714e493f1e1c969`](https://github.com/rehnx/SwapCtx/commit/962e1e649851684fab897b96f714e493f1e1c969),
+  tag `v0.1.0-preview`.
+- [Final hosted CI](https://github.com/rehnx/SwapCtx/actions/runs/39902646906):
+  five applicable jobs passed; public-repository `windows-recipient` was skipped.
+- Published ZIP, installer, executable hashes, and independently recomputed
+  download checks are in [release verification](RELEASE_VERIFICATION.md).
+- [The owner reports a separate-machine recipient pass](https://github.com/rehnx/SwapCtx/issues/6#issuecomment-6358810928)
+  for these final assets. The referenced sanitized JSON was not attached or
+  linked at review; detailed machine/check results remain unreviewed.
+- The preview is unsigned. Private reporting instructions are in
+  [SECURITY.md](../SECURITY.md).
 
-See [launch readiness](LAUNCH_READINESS.md). Public-launch status remains NO-GO
-until the required evidence and authorizations are complete.
-Owner-only steps and the independent acceptance procedure are in the
-[launch checklist](OWNER_LAUNCH_CHECKLIST.md).
+The [launch decision record](LAUNCH_READINESS.md) and
+[owner checklist](OWNER_LAUNCH_CHECKLIST.md) preserve prerelease preparation history;
+their pending-publication language is not the current download status.

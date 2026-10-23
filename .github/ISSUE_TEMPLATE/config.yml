@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Installation and troubleshooting
+    url: https://github.com/rehnx/SwapCtx/blob/main/SUPPORT.md
+    about: Start here for download, PATH, memory, and provider setup problems.
+  - name: Report a vulnerability privately
+    url: https://github.com/rehnx/SwapCtx/security/advisories
+    about: Use Report a vulnerability. Do not post sensitive findings in public issues.

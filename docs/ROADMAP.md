@@ -1,49 +1,46 @@
-# SwapCtx Project Roadmap & Community Priorities
+# Roadmap and contribution priorities
 
-SwapCtx remains a Windows-first Rust CLI with local SQLite persistence, deliberate
-memory capture, and explicit provider sharing. No mandatory cloud service, background daemon, or subscription is planned. This roadmap outlines core priorities and contribution opportunities.
+[SwapCtx v0.1.0-preview](https://github.com/rehnx/SwapCtx/releases/tag/v0.1.0-preview)
+is publicly available for Windows x64. The published source tag and assets remain
+fixed. Current work should improve usability and evidence while preserving local
+SQLite memory, project isolation, explicit sharing, and recoverability.
 
----
+This page describes areas for discussion, not delivery commitments or a schedule.
+Check the [open issues](https://github.com/rehnx/SwapCtx/issues) before starting work.
 
-## 🎯 Current Milestone: First Public Preview (v0.1.0-preview)
+## Current follow-ups
 
-New features are frozen for v0.1.0-preview. Focus on release-blocking fixes, evidence and documentation. Before publication, complete the build reproducibility investigation [#13](https://github.com/rehnx/SwapCtx/issues/13), private intake/publisher trust [#5](https://github.com/rehnx/SwapCtx/issues/5), and independent Windows acceptance [#6](https://github.com/rehnx/SwapCtx/issues/6).
+- [Independent Windows acceptance evidence (#6)](https://github.com/rehnx/SwapCtx/issues/6):
+  the owner reports a pass for the final package on a separate Windows machine.
+  A publicly accessible sanitized JSON report is still needed; see
+  [release verification](RELEASE_VERIFICATION.md).
+- [Native provider compatibility (#7)](https://github.com/rehnx/SwapCtx/issues/7):
+  record exact provider versions and distinguish hook loading, fresh local output,
+  receipt, and adherence in separately authorized evaluations. Until then, native
+  sharing remains experimental.
+- [Handoff expiry guidance (#10)](https://github.com/rehnx/SwapCtx/issues/10):
+  explain why an exact imported match retains local expiry and can still need
+  explicit review. Do not renew lifecycle metadata silently.
+- [Private intake and publisher trust (#5)](https://github.com/rehnx/SwapCtx/issues/5):
+  reconcile the historical gate with the published unsigned preview and the
+  documented private reporting route. This issue remains open; its older comments
+  are not current publication status.
 
-Key objectives before issuing the initial public preview:
+The [Windows build comparison investigation (#13)](https://github.com/rehnx/SwapCtx/issues/13)
+is closed within its recorded scope. Same-toolchain matching builds do not establish
+byte reproducibility across different native toolchains or hosted images.
 
-- **Unified Native & Intelligence Foundation**: Ensure deterministic test coverage across Windows and Linux runner environments.
-- **Handoff & Memory Diagnostics**: Keep memory handoff (`swapctx handoff`) and health audit (`swapctx memory audit`) contracts intuitive, transparent, and reviewable without automatic knowledge merging.
-- **Distribution Security & Integrity**: Verify payload checksums, release candidate packages (`install-windows.ps1`), and establish verified security contact channels.
-- **Release Documentation**: Finalize trusted installation guides, CLI command reference, and contributor onboarding documentation.
+## Useful contributions
 
----
+- Clear installation, PATH, recovery, and memory-lifecycle documentation.
+- Focused diagnostic improvements backed by disposable synthetic reproductions.
+- Deterministic retrieval, project-scope, and fake-provider regression cases.
+- Better explanations of context coverage, exclusions, and readiness states.
 
-## 🛠️ Contributor Focus Areas (after the preview freeze)
+Discuss additional providers, platform distributions, performance work, and larger
+workflow changes before implementation. No new package-manager availability,
+platform support, or provider certification is promised here.
 
-We welcome community contributions! The following areas are great entry points for new contributors:
-
-### 1. Developer Experience & CLI Usability
-- **Diagnostic Clarity**: Improve error messages and suggestions in `swapctx doctor` and `swapctx status`.
-- **Shell Completion & Formatting**: Help refine CLI help texts, table formatting, and shell integration documentation.
-- **Workflow Examples**: Contribute real-world workflow patterns and tutorial guides for prompt engineering with persistent local context.
-
-### 2. Testing & Synthetic Fixtures
-- **Deterministic Test Coverage**: Add synthetic lifecycle fixtures in `tests/` to verify edge cases in memory ranking, byte budget enforcement, and protocol serialization.
-- **Fake Provider Scenarios**: Expand mock provider responses in integration test scripts (`scripts/check-native.cjs`) to cover additional lifecycle callbacks (e.g. session compaction, fork, resume).
-
-### 3. Community Documentation & Translation
-- **Troubleshooting Scenarios**: Expand [SUPPORT.md](../SUPPORT.md) with common setup issues, PATH configuration edge cases, and Node 24+ version checks.
-- **Protocol Guides**: Improve technical explanations of `swapctx context --protocol-version 1` JSON protocols in [docs/CONTEXT_PROTOCOL.md](CONTEXT_PROTOCOL.md).
-
----
-
-## 🚀 Post-Preview Engineering Goals
-
-- **Live Provider Evaluation**: Evaluate exact installed Codex and Claude versions in separately authorized live sessions to distinguish hook loading, local preparation, actual context receipt, and model adherence.
-- **Adapter Ecosystem**: Support additional coding agent interfaces while keeping provider processes, authentication, and network communication cleanly separated from the core local memory engine.
-- **Performance & Large Stores**: Benchmarks and optimizations for SQLite retrieval performance on projects with thousands of active memory records.
-
----
-
-Track acceptance work in the [preview milestone](https://github.com/rehnx/SwapCtx/milestone/1).
-See [launch preparation](LAUNCH_READINESS.md) and [unified integration](UNIFIED_INTEGRATION.md) for current evidence and decision checklists.
+Start with [contributing](../CONTRIBUTING.md) and the [documentation index](README.md).
+Historical launch decisions remain in [launch readiness](LAUNCH_READINESS.md) and
+the [owner checklist](OWNER_LAUNCH_CHECKLIST.md); they do not supersede the public release.

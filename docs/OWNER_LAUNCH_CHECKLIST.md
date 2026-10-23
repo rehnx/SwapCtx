@@ -1,5 +1,11 @@
 # v0.1.0-preview owner launch checklist
 
+> Historical checklist for preparing the first preview. The
+> [public release](https://github.com/rehnx/SwapCtx/releases/tag/v0.1.0-preview)
+> is now available. See [published asset and acceptance evidence](RELEASE_VERIFICATION.md)
+> for current status. Preserve the original checklist below; documentation updates
+> do not require rebuilding or replacing the published assets.
+
 New features are frozen. This procedure does not authorize publication.
 Engineering supplies exact source/tree identities, CI/producer URLs, artifact
 identity/expiry, hashes and receipts. Never substitute a later rebuild.

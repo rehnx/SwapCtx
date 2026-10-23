@@ -1,9 +1,11 @@
 # Security policy
 
-SwapCtx is preparing its first Windows preview. There is no promised security
+SwapCtx v0.1.0-preview is a public, unsigned Windows x64 preview. There is no promised security
 support period, certified provider release range or security certification.
 Current review evidence is in [Phase 10](docs/PHASE10_PRODUCTION_HARDENING.md) and
-[the release assessment](docs/PHASE11_RELEASE_READINESS.md).
+[the release assessment](docs/PHASE11_RELEASE_READINESS.md); those reports retain
+their original revision scope. Current published asset identities and acceptance
+limitations are in [release verification](docs/RELEASE_VERIFICATION.md).
 
 ## Reporting a vulnerability
 
@@ -46,7 +48,7 @@ Reports should identify the affected source revision or binary hash, Windows ver
   data directory, including SQLite sidecars, and restore a valid backup into a
   new directory. Never delete WAL/journal files as a repair attempt.
 - ZIP/payload hashes detect changed bytes when compared with a trusted expected
-  hash. They do not authenticate the publisher. Current candidates are unsigned;
+  hash. They do not authenticate the publisher. The published preview is unsigned;
   build receipts are local evidence, not authenticated provenance.
 
 SwapCtx introduces no telemetry, automatic transcript collection, background
