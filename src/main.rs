@@ -20,7 +20,7 @@ mod verify;
 mod worktree;
 
 use anyhow::{bail, Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{ColorChoice, CommandFactory, FromArgMatches, Parser, Subcommand};
 use display::safe;
 use std::{env, path::PathBuf, process::ExitCode};
 
@@ -371,7 +371,16 @@ fn run(cli: Cli) -> Result<u8> {
 }
 
 fn main() -> ExitCode {
-    match run(Cli::parse()) {
+    // Keep Clap's help/errors consistent with our menu, including an empty
+    // NO_COLOR and Windows hosts where VT processing could not be enabled.
+    let color = if display::is_color_enabled() {
+        ColorChoice::Auto
+    } else {
+        ColorChoice::Never
+    };
+    let matches = Cli::command().color(color).get_matches();
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
+    match run(cli) {
         Ok(code) => ExitCode::from(code),
         Err(error) => {
             eprintln!(

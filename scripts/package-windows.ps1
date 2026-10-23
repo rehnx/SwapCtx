@@ -154,6 +154,9 @@ try {
     [IO.File]::Copy((Join-Path $PSScriptRoot 'install-windows.ps1'),$taskInstaller,$false)
     $taskInstallerHash = Get-TaskSha256 $taskInstaller
     $taskChecksums = "$taskHash  $taskArchiveName`n$taskInstallerHash  install-windows.ps1`n"
+    $taskCmdInstaller = Join-Path $taskStage 'install-windows.cmd'
+    [IO.File]::Copy((Join-Path $PSScriptRoot 'install-windows.cmd'),$taskCmdInstaller,$false)
+    $taskChecksums += (Get-TaskSha256 $taskCmdInstaller) + "  install-windows.cmd`n"
     $taskAcceptance = Join-Path $taskStage 'test-windows-preview.ps1'
     [IO.File]::Copy((Join-Path $PSScriptRoot 'test-windows-preview.ps1'),$taskAcceptance,$false)
     $taskChecksums += (Get-TaskSha256 $taskAcceptance) + "  test-windows-preview.ps1`n"

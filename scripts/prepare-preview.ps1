@@ -91,7 +91,7 @@ try {
     $taskReceipt = Join-Path $taskBuild 'build-info.json'
     $taskCandidate = Join-Path $taskStage 'candidate'
     Invoke-PreviewCommand 'receipt_checked_packaging' $taskPS @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',(Join-Path $PSScriptRoot 'package-windows.ps1'),'-Destination',$taskCandidate,'-Binary',$taskBinary,'-BuildInfo',$taskReceipt)
-    foreach ($taskScript in @('check-context.cjs','check-session.cjs','check-everyday.cjs','check-native.cjs','check-package.cjs')) {
+    foreach ($taskScript in @('check-context.cjs','check-session.cjs','check-everyday.cjs','check-native.cjs','check-package.cjs','check-windows-shells.cjs')) {
         Invoke-PreviewCommand $taskScript $taskNode @((Join-Path $PSScriptRoot $taskScript),$taskBinary)
     }
     Invoke-PreviewCommand 'static_imports_and_command_discovery' $taskNode @((Join-Path $PSScriptRoot 'check-release.cjs'),$taskBinary,'--static')

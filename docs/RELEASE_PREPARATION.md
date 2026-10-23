@@ -87,7 +87,8 @@ optional benchmark, model, pilot and soak modes are excluded.
 
 ## Candidate contents and trust
 
-The output directory contains the ZIP, installer, recipient acceptance script,
+The output directory contains the ZIP, both `install-windows.cmd` and
+`install-windows.ps1`, the recipient acceptance script,
 `SHA256SUMS.txt`, `build-info.json`, `release-checks.json` and
 `windows-acceptance.json`. The ZIP contains `swapctx.exe`, Apache-2.0 `LICENSE`,
 `QUICKSTART.md`, `DEPENDENCIES.md`, `Cargo.lock`, generated third-party notices,
@@ -148,3 +149,20 @@ public download or publish it as a release without founder approval.
 Follow the authorization granted for the current task when dispatching builds or
 pushing source. Tags, visibility changes, external distribution, package submissions
 and public releases remain separate launch actions; this procedure grants none.
+
+## Windows shell regressions
+
+`scripts/check-windows-shells.cjs` is part of CI, `verify.ps1` and the fresh
+producer gate. It packages the current binary and tests CMD and Windows
+PowerShell 5.1, plus PowerShell 7 when installed. It checks fresh/repeated
+installation, Unicode and spaced paths, archive/payload verification failures,
+wrapper exit codes, session PATH lookup, memory retrieval and native fake-provider
+exit propagation. A private Win32 console fixture feeds q/Enter and native fake
+provider selections through real console handles for each shell, covering legacy ASCII, NO_COLOR, and a simulated
+Windows Terminal capability marker. No installed providers are executed.
+
+These automated console tests do not inspect physical fonts or prove rendering
+on another PC. Actual Windows Terminal/legacy Console visual acceptance and the
+static-runtime fresh producer still require Windows; Linux passes do not
+establish either. New packets checksum both installers; published preview assets
+and historical evidence remain unchanged.

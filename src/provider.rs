@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Result};
 use clap::ValueEnum;
 use std::{
     env, fs,
-    io::{self, IsTerminal, Write},
+    io::{self, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -58,8 +58,8 @@ pub fn select_and_launch_with_info(
     info: Option<(&Path, i64, i64)>,
     launch: impl FnOnce(Provider) -> Result<u8>,
 ) -> Result<u8> {
-    if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
-        bail!("Provider selection needs an interactive terminal; use `swapctx launch codex` or `swapctx launch claude`");
+    if !crate::display::terminal().interactive {
+        bail!("Provider selection needs an interactive terminal. Open CMD or PowerShell and run swapctx, or use `swapctx native codex` or `swapctx native claude` explicitly");
     }
     crate::display::print_banner();
     println!();
@@ -76,7 +76,7 @@ pub fn select_and_launch_with_info(
             "  \x1b[1;92m?\x1b[0m \x1b[1mSelect an option \x1b[90m[1-2, q]\x1b[0m\x1b[1m:\x1b[0m "
         );
     } else {
-        println!("SwapCtx — choose your coding agent\n");
+        println!("SwapCtx - choose your coding agent\n");
         println!("  1  Codex");
         println!("  2  Claude Code");
         println!("  q  Quit (or press Enter)\n");
