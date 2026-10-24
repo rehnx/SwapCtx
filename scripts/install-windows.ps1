@@ -130,7 +130,19 @@ try {
     [IO.Directory]::Move($taskPayload,$taskOutput)
     Write-Output "Installed verified payload: $taskOutput"
     Write-Output 'No executable was started. No PATH or user data was changed. Publisher authentication depends on the source of your expected hash.'
-    Write-Output ('To enable swapctx in this PowerShell session: $env:PATH = ''' + ($taskOutput + ';').Replace("'","''") + ''' + $env:PATH')
+    Write-Output 'Open CMD or PowerShell in your project directory. Session-only command lookup:'
+    if ($taskOutput -notmatch '[;%!\r\n"]') {
+        Write-Output ('  CMD (with delayed expansion off): set "PATH=' + $taskOutput + ';%PATH%"')
+    } else {
+        Write-Output '  CMD: this path contains shell/PATH metacharacters. Use an installation directory without semicolons, percent signs, exclamation marks or quotes for session PATH setup.'
+    }
+    if ($taskOutput -notmatch '[;\r\n]') {
+        Write-Output ('  PowerShell 5.1/7: $env:PATH = ''' + ($taskOutput + ';').Replace("'","''") + ''' + $env:PATH')
+    } else {
+        Write-Output '  PowerShell: this path cannot be represented as one PATH entry. Invoke swapctx.exe by absolute path with the & operator.'
+    }
+    Write-Output 'Check discovery: CMD: where.exe swapctx | PowerShell: Get-Command swapctx -CommandType Application'
+    Write-Output 'For persistent lookup, add only this directory to your USER Path in Windows environment-variable settings and reopen the terminal. No administrator privileges are needed.'
 } catch {
     $taskFailure = $_
     throw

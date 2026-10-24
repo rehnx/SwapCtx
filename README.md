@@ -43,13 +43,16 @@ local ranking, with no embedding service.
 
 ## Installation
 
-Download the official
-[Windows x64 ZIP](https://github.com/rehnx/SwapCtx/releases/download/v0.1.0-preview/swapctx-0.1.0-preview-windows-x64.zip),
-[PowerShell installer](https://github.com/rehnx/SwapCtx/releases/download/v0.1.0-preview/install-windows.ps1),
-and [checksums](https://github.com/rehnx/SwapCtx/releases/download/v0.1.0-preview/SHA256SUMS.txt)
-from **v0.1.0-preview**. Follow the
-[Windows installation guide](docs/WINDOWS_RELEASE.md) to verify both downloads,
-install into a new directory, and enable command lookup.
+Windows setup starts from **CMD** with `install-windows.cmd`. Keep it beside
+`install-windows.ps1`: the wrapper invokes the same verified, offline installer.
+PowerShell 5.1 and PowerShell 7 remain supported. Verify the ZIP and both installer
+files against trusted release checksums before running either entry point.
+See the [Windows installation guide](docs/WINDOWS_RELEASE.md) for commands in
+both shells, PATH setup, and terminal rendering behavior.
+
+The existing [v0.1.0-preview assets](https://github.com/rehnx/SwapCtx/releases/tag/v0.1.0-preview)
+contain the original PowerShell installer only. CMD setup is included in new
+source-built candidate packets; it has not been published to that release.
 
 The portable core requires no administrator privileges or development tools.
 You can also verify and extract the ZIP manually. Checksums detect changed bytes;
@@ -62,22 +65,18 @@ and the pinned Rust toolchain in [rust-toolchain.toml](rust-toolchain.toml).
 
 ## Quick start
 
-After installation, open PowerShell in a project directory. These commands stay
+After installation, open CMD or PowerShell in a project directory. These commands stay
 local and do not start an AI provider:
 
 ```powershell
-# Register this directory as a project.
 swapctx init
 
-# Save a requirement and a decision.
-swapctx memory add --kind requirement --key compatibility --source 'project specification' 'Preserve public interfaces'
-swapctx memory add --kind decision 'Use the existing SQLite store'
+swapctx memory add --kind requirement --key compatibility --source "project specification" "Preserve public interfaces"
+swapctx memory add --kind decision "Use the existing SQLite store"
 
-# Find saved knowledge and retrieve a bounded JSON context packet.
-swapctx memory search 'interfaces'
-swapctx context --protocol-version 1 --query 'interfaces' --max-bytes 8192
+swapctx memory search "interfaces"
+swapctx context --protocol-version 1 --query "interfaces" --max-bytes 8192
 
-# Inspect the selected project and stored-data integrity.
 swapctx status
 swapctx doctor
 ```
@@ -141,10 +140,14 @@ EXE launching needs no Node; standard npm JavaScript entries still need Node.
 An unsupported compatibility probe warns and falls back to plain native launch.
 Invalid or incomplete context on a supported integration fails closed.
 
-Bare `swapctx` also offers an interactive selector. This is a static menu excerpt:
+Bare `swapctx` offers an interactive selector in the current terminal. Windows
+Terminal uses the styled UI when VT processing is available. Unknown legacy
+consoles, `TERM=dumb`, or `NO_COLOR` use ASCII; redirected input/output refuses
+interactive selection without launching a provider. No shell switch is needed.
+This is a static ASCII menu excerpt:
 
 ```text
-SwapCtx — choose your coding agent
+SwapCtx - choose your coding agent
 
   1  Codex
   2  Claude Code

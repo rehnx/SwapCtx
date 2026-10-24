@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — Windows terminal compatibility
+
+- Make `install-windows.cmd` the default Windows setup entry point, delegating
+  to the same verified PowerShell installer. Checksum both files in new packets.
+- Probe the output console for virtual terminal processing and use ASCII on
+  unknown legacy hosts, with `NO_COLOR` and redirected output handled consistently.
+- Document CMD and PowerShell 5.1/7 installation, discovery and user PATH setup;
+  add offline shell and interactive console regressions to Windows gates.
+
 ## 0.1.0-preview — unpublished
 
 - Give transient SQLite writer contention a bounded 30-second wait while keeping

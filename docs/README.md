@@ -53,6 +53,7 @@ describe their stated revision; consult release evidence for the shipped binary.
 ## Contributing
 
 - [First contribution, development setup, and verification](../CONTRIBUTING.md)
+- [Windows terminal compatibility review and remaining checks](WINDOWS_TERMINAL_SUPPORT.md)
 - [Current priorities and open work](ROADMAP.md)
 - [Community conduct](../CODE_OF_CONDUCT.md)
 - [Bug and feature templates](https://github.com/rehnx/SwapCtx/issues/new/choose)

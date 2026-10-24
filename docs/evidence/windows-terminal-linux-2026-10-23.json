@@ -1,0 +1,120 @@
+{
+  "format_version": 1,
+  "date": "2026-10-23",
+  "status": "portable_checks_passed_windows_execution_pending",
+  "base_commit": "b08383e6deefbe3859cdb389ca9238eee2320b8d",
+  "working_tree_uncommitted": true,
+  "environment": {
+    "os": "Linux",
+    "rust": "1.99.0",
+    "node": "24.19.0",
+    "powershell_parser_only": "7.5.4 on Linux"
+  },
+  "cargo": {
+    "format": "passed",
+    "clippy": "passed --locked --all-targets -- -D warnings",
+    "build": "passed --locked --release (Linux)",
+    "debug": {
+      "passed": 117,
+      "failed": 0,
+      "ignored": 1
+    },
+    "release": {
+      "passed": 117,
+      "failed": 0,
+      "ignored": 1
+    }
+  },
+  "node": {
+    "build_verification": 3,
+    "sql": 10,
+    "context": 23,
+    "session": 23,
+    "everyday": 28,
+    "native": {
+      "passed": 34,
+      "windows_only_skipped": 12
+    },
+    "pilot_oracle": 12,
+    "soak_oracle": 11,
+    "documentation": "passed for 24 documents, 146 local links and 41 fenced blocks; native Windows PowerShell 5.1 parsing not run",
+    "notices": "passed for 57 locked Windows packages"
+  },
+  "powershell_portable": {
+    "powershell_parser": "7.5.4 on Linux",
+    "readme_core_commands": 7,
+    "provider_help_only": 4,
+    "real_provider_launches": 0,
+    "scripts_and_examples_parsed": 74
+  },
+  "pseudo_terminal_linux": [
+    {
+      "mode": "styled",
+      "exit_code": 0,
+      "ansi": true,
+      "ascii": false,
+      "bytes": 1063
+    },
+    {
+      "mode": "NO_COLOR",
+      "exit_code": 0,
+      "ansi": false,
+      "ascii": true,
+      "bytes": 635
+    },
+    {
+      "mode": "empty_NO_COLOR",
+      "exit_code": 0,
+      "ansi": false,
+      "ascii": true,
+      "bytes": 635
+    },
+    {
+      "mode": "TERM_dumb",
+      "exit_code": 0,
+      "ansi": false,
+      "ascii": true,
+      "bytes": 635
+    },
+    {
+      "mode": "C_locale",
+      "exit_code": 0,
+      "ansi": false,
+      "ascii": true,
+      "bytes": 635
+    }
+  ],
+  "windows_target_metadata": {
+    "files": [
+      "src/display.rs",
+      "tests/fixtures/windows-menu-console.rs"
+    ],
+    "target": "x86_64-pc-windows-msvc",
+    "result": "passed; type checking only, no linking or execution"
+  },
+  "not_run": [
+    "Windows CMD / PowerShell 5.1 / PowerShell 7 shell regressions",
+    "Windows private-console regressions",
+    "Windows package, PE, receipt and recipient acceptance checks",
+    "Fresh Windows static-runtime producer",
+    "Actual Windows Terminal / legacy Console visual checks on another PC"
+  ],
+  "files_sha256": {
+    "src/display.rs": "9de24f0c6f218ca44f5fd4ba7bc30e0311ac8ff894c462b6f876d929b5206de2",
+    "src/main.rs": "7f7dff97e993d8a4cd9f36845f4b91ea014316983ea10c4b3e2e59833cae10bd",
+    "src/provider.rs": "50235339503786f6fc743748d1c67b2876e28c4783b08a9980dbd5b99e8d3cf6",
+    "src/native.rs": "3539cc53b48bc0148fb1eeb0ed18514cfa8876c71736a83f859bc0c95cb218df",
+    "scripts/install-windows.cmd": "82df97fe05d5ecc386f8352ffbeda99d5311933f74b4b98ddb0cf3a0fc5cdb6b",
+    "scripts/install-windows.ps1": "0600a09c525b225bf60bd43a5e7d3673abbe57949874fb8ca0c87e3334b45d1c",
+    "scripts/package-windows.ps1": "4e26558b7042a9f3afc6cfff3b80fd0493661874213911da55adafbea40e6f31",
+    "scripts/check-windows-shells.cjs": "048682b04813546ba6723a40f22c5a3b5837b65b0e53439b90aec62bcb4c9021",
+    "tests/fixtures/windows-menu-console.rs": "af6c88f340778ea0184e6817934c81ea660fa7cfff2fc92aef5d9a633ee3cf51",
+    "tests/terminal.rs": "aa367bbc9c0a73bde33e8f60d06adc1f49b3ef6fdd3bbc012989b6f612d64837",
+    "Cargo.toml": "46264b272b2020c587d32753ee2dff378de6c6e06796e5bc9d31dd0213badd66",
+    "Cargo.lock": "37286f8cd2c7084417dcc7f88f217b3be4f948c5573c5b8d9f00bee1091ee1e9"
+  },
+  "linux_release_binary_sha256": "5317d6ed0d279ad1f9a4200ab747441434096df3ddc1ca376f2cebcc3bf9084a",
+  "real_provider_launches": 0,
+  "published": false,
+  "committed": false
+}

@@ -89,6 +89,8 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Third-party notices are stale' }
             node scripts/check-package.cjs $taskExecutable
             if ($LASTEXITCODE -ne 0) { throw 'Windows package checks failed' }
+            node scripts/check-windows-shells.cjs $taskExecutable
+            if ($LASTEXITCODE -ne 0) { throw 'Windows shell compatibility checks failed' }
             node scripts/check-release.cjs $taskExecutable
             if ($LASTEXITCODE -ne 0) { throw 'Windows command discovery and PE checks failed' }
           }
@@ -156,8 +158,8 @@ jobs:
             if ((Get-FileHash -LiteralPath $taskFile -Algorithm SHA256).Hash -ine $taskExpected) { throw 'Candidate checksum mismatch' }
             $taskHashes[$taskName] = $taskExpected
           }
-          if ($taskHashes.Count -ne 6) { throw 'Incomplete candidate checksums' }
-          foreach ($taskName in @('install-windows.ps1','test-windows-preview.ps1','build-info.json','release-checks.json','windows-acceptance.json')) {
+          if ($taskHashes.Count -ne 7) { throw 'Incomplete candidate checksums' }
+          foreach ($taskName in @('install-windows.ps1','install-windows.cmd','test-windows-preview.ps1','build-info.json','release-checks.json','windows-acceptance.json')) {
             if (!$taskHashes.ContainsKey($taskName)) { throw 'Missing candidate evidence' }
           }
           $taskArchives = @(Get-ChildItem -LiteralPath $taskCandidate -Filter 'swapctx-*-windows-x64.zip' -File)

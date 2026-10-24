@@ -9,3 +9,5 @@
 *.rs text eol=lf
 *.sql text eol=lf
 *.cjs text eol=lf
+*.cmd text eol=crlf
+*.ps1 text eol=lf

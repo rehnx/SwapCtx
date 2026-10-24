@@ -83,6 +83,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Native provider offline checks failed' }
         & $taskNode scripts/check-package.cjs target/release/swapctx.exe
         if ($LASTEXITCODE -ne 0) { throw 'Windows package checks failed' }
+        & $taskNode scripts/check-windows-shells.cjs target/release/swapctx.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Windows shell compatibility checks failed' }
         & $taskNode scripts/check-release.cjs target/release/swapctx.exe
         if ($LASTEXITCODE -ne 0) { throw 'Windows command discovery and PE checks failed' }
         & $taskNode scripts/check-pilot-harness.cjs

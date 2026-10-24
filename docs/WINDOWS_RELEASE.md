@@ -1,112 +1,160 @@
 # Install SwapCtx on Windows
 
-The public [v0.1.0-preview release](https://github.com/rehnx/SwapCtx/releases/tag/v0.1.0-preview)
-supports **Windows x64**. The binary is unsigned. There are no official WinGet,
-Scoop, Linux, or macOS packages. Core memory commands need no Node.js, Rust,
-compiler, or AI provider at runtime.
+SwapCtx supports Windows x64 without administrator privileges. Core memory
+commands need no Node.js, Rust, compiler or AI provider at runtime. The binary
+is unsigned. There are no official WinGet or Scoop packages.
 
 ## Download and verify
 
-Download these three assets into the same directory:
+New source-built candidate packets include the ZIP, **install-windows.cmd**,
+**install-windows.ps1**, and **SHA256SUMS.txt**. Keep both installer files in the
+same directory. CMD is the default setup entry point; Windows PowerShell 5.1
+provides the installation engine. PowerShell 5.1 and PowerShell 7 can also invoke
+the PowerShell installer directly. Neither entry point switches your running shell.
 
-- [swapctx-0.1.0-preview-windows-x64.zip](https://github.com/rehnx/SwapCtx/releases/download/v0.1.0-preview/swapctx-0.1.0-preview-windows-x64.zip)
-- [install-windows.ps1](https://github.com/rehnx/SwapCtx/releases/download/v0.1.0-preview/install-windows.ps1)
-- [SHA256SUMS.txt](https://github.com/rehnx/SwapCtx/releases/download/v0.1.0-preview/SHA256SUMS.txt)
+The existing [v0.1.0-preview release](https://github.com/rehnx/SwapCtx/releases/tag/v0.1.0-preview)
+has the original ZIP, PowerShell installer and checksums only. The CMD wrapper
+and terminal fixes described here require a new source build/candidate; they
+have not been added to those published assets. For that original packet, use
+the PowerShell commands below with its published checksums. Historical identities
+are recorded in [release verification](RELEASE_VERIFICATION.md).
 
-Open Windows PowerShell in that download directory. Check both files before
-running the installer:
+Obtain the packet and expected hashes through a channel you trust. Before
+executing either installer, verify **the ZIP and both installer files** against
+that packet's `SHA256SUMS.txt`. From CMD:
 
-```powershell
-$ExpectedZipSha256 = '42df6ee920ac158e7c3b49cc1902267054973d5fee404fcd659269bb2ede31c4'
-$ExpectedInstallerSha256 = '4002d49f29715653f4df9f9a333584fb6719b819f73b6a4c6a7a111a981619b2'
-if ((Get-FileHash -LiteralPath .\swapctx-0.1.0-preview-windows-x64.zip -Algorithm SHA256).Hash -ine $ExpectedZipSha256) { throw 'ZIP checksum mismatch' }
-if ((Get-FileHash -LiteralPath .\install-windows.ps1 -Algorithm SHA256).Hash -ine $ExpectedInstallerSha256) { throw 'Installer checksum mismatch' }
+```bat
+certutil -hashfile "swapctx-0.1.0-preview-windows-x64.zip" SHA256
+certutil -hashfile "install-windows.cmd" SHA256
+certutil -hashfile "install-windows.ps1" SHA256
 ```
 
-These values identify the existing published assets, not later source builds.
-Compare with the official release through a channel you trust. Checksums detect
-changed bytes; they do not independently authenticate the publisher. Inside the
-ZIP, `manifest.json` lists each payload file's SHA-256 and length.
-
-## Install
-
-Install or extract the ZIP into a new local folder. No administrator privileges,
-PATH modification, telemetry, or background service is required. Core memory
-commands need only swapctx.exe. The optional managed console additionally needs
-Node.js 24+ and Codex CLI 0.162.1; it sends selected context to your configured
-Codex provider when you explicitly run it.
-
-The binary also supports `swapctx native codex` and `swapctx native claude`,
-which launch the installed provider's original UI. Bare `swapctx` opens a provider
-selector in an interactive terminal. Memory exposure is off by default. Optional
-`--context` requires Node.js 24+ and a provider advertising the required hook or
-plugin interface; older versions fall back to ordinary native launching. This
-adapter has synthetic test coverage, with live compatibility and native
-receipt/adherence unverified. See [native setup](PHASE8_NATIVE_PROVIDERS.md) for
-limitations. No provider is bundled or authenticated by SwapCtx.
-
-After both checks above pass, install into a **new** directory under the existing
-local application-data directory:
+Compare every resulting hash with its trusted checksum entry and stop on any
+mismatch. In PowerShell 5.1 or 7, these commands produce the same SHA-256 values:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-windows.ps1 `
+Get-FileHash -LiteralPath .\swapctx-0.1.0-preview-windows-x64.zip -Algorithm SHA256
+Get-FileHash -LiteralPath .\install-windows.cmd -Algorithm SHA256
+Get-FileHash -LiteralPath .\install-windows.ps1 -Algorithm SHA256
+```
+
+Checksums detect changed bytes; they do not independently authenticate a
+publisher. Do not run an unverified installer to verify itself. The installer
+independently checks the expected ZIP hash and every payload hash and length.
+
+## Install from CMD (default)
+
+Open CMD in the download directory. Replace `ZIP_SHA256_FROM_TRUSTED_CHECKSUMS`
+with the ZIP's 64 hexadecimal hash characters, after the checks above pass:
+
+```bat
+install-windows.cmd -Archive ".\swapctx-0.1.0-preview-windows-x64.zip" -ExpectedSha256 ZIP_SHA256_FROM_TRUSTED_CHECKSUMS -Destination "%LOCALAPPDATA%\SwapCtx-0.1.0-preview"
+if errorlevel 1 echo Installation failed; stop and inspect the error.
+```
+
+The parent directory must exist and the destination must be **new**. Repeating
+an installation into the same directory fails and preserves its contents. Use
+a new versioned directory for upgrades. Paths containing spaces and Unicode are
+supported. In CMD, use double quotes and keep delayed expansion off (the default);
+CMD expands percent variables in commands you type. From a batch script use
+`call install-windows.cmd ...` if that script must continue afterwards.
+
+The CMD wrapper uses the OS Windows PowerShell host with profiles and prompting
+disabled and returns its exit code. It runs the adjacent `.ps1` file without
+interpreting its contents as a shell command. The PowerShell engine snapshots the
+archive, verifies hashes, rejects unexpected/traversal/link entries, and installs
+by directory rename. Neither entry point runs package contents, downloads files,
+modifies PATH or user data, or requires elevation. The process-only execution
+policy flag does not authenticate code or change persistent policy.
+
+## Install from PowerShell 5.1 or 7
+
+Use the same trusted ZIP hash and a new destination:
+
+```powershell
+$ExpectedZipSha256 = 'ZIP_SHA256_FROM_TRUSTED_CHECKSUMS'
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\install-windows.ps1 `
   -Archive .\swapctx-0.1.0-preview-windows-x64.zip `
   -ExpectedSha256 $ExpectedZipSha256 `
   -Destination "$env:LOCALAPPDATA\SwapCtx-0.1.0-preview"
 if ($LASTEXITCODE -ne 0) { throw 'Installation failed' }
-
-$SwapCtx = Join-Path $env:LOCALAPPDATA 'SwapCtx-0.1.0-preview\swapctx.exe'
-& $SwapCtx --version
-# Expected: swapctx 0.1.0-preview
 ```
 
-The parent directory must exist and the destination must be new. The script
-checks the archive hash and every payload hash, rejects unexpected entries,
-then installs by a directory rename. It never executes package contents, changes
-PATH, downloads anything or modifies a store. It requires only Windows
-PowerShell 5.1; Node and Rust are not installation dependencies. The process-only
-execution-policy flag does not authenticate downloaded code. Manual extraction
-remains available, with manual hash verification your responsibility.
+For PowerShell 7 use `pwsh -NoProfile -NonInteractive -File` with the same
+arguments. You can also invoke `.\install-windows.cmd` from either PowerShell.
+Manual ZIP extraction remains available with manual verification of the payload
+hashes and lengths in `manifest.json` your responsibility.
 
-## Start using memory
+## Executable discovery and PATH
 
-Use an absolute executable path, especially when changing project directories:
+First verify the installed executable by absolute path. In CMD:
 
-```powershell
-# $SwapCtx is the absolute executable path set during installation above.
-& $SwapCtx --version
-& $SwapCtx --help
-Set-Location 'C:\Projects\YourProject'
-& $SwapCtx init
-& $SwapCtx memory add --kind requirement --key compatibility 'Preserve existing public interfaces'
-& $SwapCtx memory search 'interfaces'
-& $SwapCtx context --max-bytes 8192
-& $SwapCtx doctor
+```bat
+"%LOCALAPPDATA%\SwapCtx-0.1.0-preview\swapctx.exe" --version
+set "PATH=%LOCALAPPDATA%\SwapCtx-0.1.0-preview;%PATH%"
+where.exe swapctx
+swapctx --version
 ```
 
-To use the bare command from any project in your current PowerShell session:
+In PowerShell 5.1 or 7:
 
 ```powershell
 $InstallDirectory = Join-Path $env:LOCALAPPDATA 'SwapCtx-0.1.0-preview'
+$SwapCtx = Join-Path $InstallDirectory 'swapctx.exe'
+& $SwapCtx --version
 $env:PATH = "$InstallDirectory;$env:PATH"
 Get-Command swapctx -CommandType Application
 swapctx --version
-Set-Location 'C:\Projects\YourProject'
-swapctx status
 ```
 
-Check that `Get-Command` resolves the expected executable. This PATH change ends
-with the terminal session. It does not move your data or change the working
-directory. The installer prints the equivalent command for your chosen folder.
-For persistent command lookup, use Windows' **Edit environment variables for your
-account**, edit your **user** Path, and add this installation directory as one
-entry. Keep existing entries. Close terminal applications and launch a new one
-from Start, then check `Get-Command swapctx -CommandType Application` again.
-This manual Windows step needs no development tools or administrator privileges.
-It has not been performed on the current user's profile by our tests. Avoid
-adding directories containing semicolons to PATH. Automatic persistent PATH
-registration and WinGet/Scoop installation are not provided; no public package
-identifier has been assigned or submitted.
+Confirm discovery resolves the intended installation. PowerShell requires `&`
+before a quoted executable path; CMD invokes the quoted path directly. PATH
+changes above affect only the current session. The installer prints commands for
+both shells. Paths containing semicolons cannot be a single PATH entry; use an
+absolute executable path instead. For CMD session setup, avoid percent signs and
+exclamation marks in the installation directory as well.
+
+For persistent lookup, open Windows **Edit environment variables for your
+account**, edit your **user** Path, and add only the installation directory as
+one entry. Keep existing entries, close terminal applications, and launch a new
+one from Start. Verify discovery again. No administrator privileges or system
+PATH changes are required; the installer never performs this step automatically.
+
+## Start using memory and the native menu
+
+After session PATH setup, these commands work in CMD and both PowerShell versions:
+
+```bat
+cd "C:\Projects\YourProject"
+swapctx init
+swapctx memory add --kind requirement --key compatibility "Preserve existing public interfaces"
+swapctx memory search "interfaces"
+swapctx context --max-bytes 8192
+swapctx doctor
+swapctx
+```
+
+Bare `swapctx` opens the menu in the current console and accepts a number or
+`q`/Enter. It does not replace CMD or PowerShell. Native commands inherit your
+terminal handles. Provider discovery uses absolute PATH entries and excludes the
+project directory; it does not depend on PowerShell aliases or profiles.
+
+Windows Terminal uses ANSI styling when virtual terminal processing can be
+enabled on the actual console handle. Rust writes Unicode to console handles
+independently of CMD's OEM code page. Unknown legacy console fonts cannot be
+reliably probed, so those hosts get ASCII automatically. `NO_COLOR` (including
+an empty value) or `TERM=dumb` selects the ASCII UI. Unicode paths in that menu
+are displayed as escaped code points on limited consoles; their actual paths,
+stored memory and JSON remain unchanged. SwapCtx never changes the code page or
+font. To select ASCII explicitly, set `NO_COLOR=1` in CMD or `$env:NO_COLOR='1'`
+in PowerShell. Redirection disables styling; the menu refuses noninteractive
+input/output and starts no provider. Use explicit native commands in scripts.
+
+If command lookup fails, check `where.exe swapctx` in CMD or `Get-Command swapctx
+-CommandType Application` in PowerShell, reopen the terminal after a user Path
+change, or invoke the executable by absolute path. Keep your data directory and
+backups when changing installations. For rendering problems, use `NO_COLOR=1`
+and report the Windows version and terminal host, separately from the shell.
 
 ## Optional recipient acceptance
 

@@ -21,6 +21,16 @@ bug report or improvement proposal. Report vulnerabilities privately through
 
 ## Collect safe diagnostics
 
+For CMD command lookup, use `where.exe swapctx`; PowerShell uses `Get-Command
+swapctx -CommandType Application`. If lookup fails, invoke the installed
+`swapctx.exe` by absolute path or follow the session PATH instructions in the
+[Windows guide](docs/WINDOWS_RELEASE.md#executable-discovery-and-path).
+
+New builds use ASCII automatically on unknown legacy consoles. To request it
+explicitly, run `set "NO_COLOR=1"` in CMD or `$env:NO_COLOR='1'` in PowerShell
+before starting SwapCtx. Include both the shell (CMD, PowerShell 5.1 or 7) and
+the host (Windows Terminal or legacy Windows Console) in rendering bug reports.
+
 Run these commands from your project folder to diagnose issues locally without launching external providers or transmitting data:
 
 ```powershell

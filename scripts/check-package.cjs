@@ -52,8 +52,8 @@ function setupFixture() {
 }
 function registerPackageTests() {
 test('portable package contains only the allowlisted payload and correct hashes', () => {
-  assert.deepEqual(fs.readdirSync(destination).sort(), ['SHA256SUMS.txt','install-windows.ps1','test-windows-preview.ps1',archiveName].sort());
-  assert.equal(fs.readFileSync(path.join(destination,'SHA256SUMS.txt'),'utf8'), `${hash(path.join(destination,archiveName))}  ${archiveName}\n${hash(path.join(destination,'install-windows.ps1'))}  install-windows.ps1\n${hash(path.join(destination,'test-windows-preview.ps1'))}  test-windows-preview.ps1\n`);
+  assert.deepEqual(fs.readdirSync(destination).sort(), ['SHA256SUMS.txt','install-windows.ps1','install-windows.cmd','test-windows-preview.ps1',archiveName].sort());
+  assert.equal(fs.readFileSync(path.join(destination,'SHA256SUMS.txt'),'utf8'), `${hash(path.join(destination,archiveName))}  ${archiveName}\n${hash(path.join(destination,'install-windows.ps1'))}  install-windows.ps1\n${hash(path.join(destination,'install-windows.cmd'))}  install-windows.cmd\n${hash(path.join(destination,'test-windows-preview.ps1'))}  test-windows-preview.ps1\n`);
   assert.deepEqual(fs.readdirSync(extracted).sort(), ['Cargo.lock','DEPENDENCIES.md','LICENSE','QUICKSTART.md','manifest.json','swapctx.exe','THIRD_PARTY_NOTICES.txt','third-party-inventory.json'].sort());
   const manifest = JSON.parse(fs.readFileSync(path.join(extracted,'manifest.json'),'utf8'));
   assert.equal(manifest.format_version,1);
@@ -142,6 +142,7 @@ test('packaging does not depend on Get-FileHash cmdlet availability', () => {
   assert.ok(original.includes(insertionPoint), 'PowerShell script strict-mode marker must remain present');
   fs.writeFileSync(path.join(source,'scripts/package-windows.ps1'), original.replace(insertionPoint, insertionPoint + "\nfunction Get-FileHash { throw 'GET_FILE_HASH_SHOULD_NOT_BE_CALLED' }"));
   fs.copyFileSync(path.join(__dirname,'install-windows.ps1'),path.join(source,'scripts/install-windows.ps1'));
+  fs.copyFileSync(path.join(__dirname,'install-windows.cmd'),path.join(source,'scripts/install-windows.cmd'));
   fs.copyFileSync(path.join(__dirname,'test-windows-preview.ps1'),path.join(source,'scripts/test-windows-preview.ps1'));
   for (const name of ['Cargo.toml','Cargo.lock','LICENSE','THIRD_PARTY_NOTICES.txt']) fs.copyFileSync(path.join(__dirname,'..',name),path.join(source,name));
   for (const name of ['WINDOWS_RELEASE.md','DEPENDENCIES.md','third-party-inventory.json']) fs.copyFileSync(path.join(__dirname,'../docs',name),path.join(source,'docs',name));
@@ -160,6 +161,7 @@ test('cleanup parent guard accepts equivalent paths with different trailing sepa
   assert.ok(original.includes(marker),'task parent marker must remain explicit');
   fs.writeFileSync(path.join(source,'scripts/package-windows.ps1'), original.replace(marker, marker + "\n$taskParent = $taskParent + '\\'"));
   fs.copyFileSync(path.join(__dirname,'install-windows.ps1'),path.join(source,'scripts/install-windows.ps1'));
+  fs.copyFileSync(path.join(__dirname,'install-windows.cmd'),path.join(source,'scripts/install-windows.cmd'));
   fs.copyFileSync(path.join(__dirname,'test-windows-preview.ps1'),path.join(source,'scripts/test-windows-preview.ps1'));
   for (const name of ['Cargo.toml','Cargo.lock','LICENSE','THIRD_PARTY_NOTICES.txt']) fs.copyFileSync(path.join(__dirname,'..',name),path.join(source,name));
   for (const name of ['WINDOWS_RELEASE.md','DEPENDENCIES.md','third-party-inventory.json']) fs.copyFileSync(path.join(__dirname,'../docs',name),path.join(source,'docs',name));
